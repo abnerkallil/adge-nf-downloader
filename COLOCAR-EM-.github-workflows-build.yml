@@ -1,0 +1,70 @@
+name: Gerar instalador MSI
+
+on:
+  push:
+    tags: ["v*"]          # ao criar uma tag (ex.: v1.0.0) publica o MSI na página de Releases
+  pull_request:
+  workflow_dispatch:      # também dá para rodar manualmente
+
+permissions:
+  contents: write
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements-build.txt
+
+      - name: Testes do núcleo
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Teste da interface (abre a janela de verdade)
+        run: python tests/smoke_gui.py
+
+      - name: Teste do Cofre do Windows (chave das senhas)
+        continue-on-error: true
+        run: python -c "from adge_nf.store import Armazenamento; import tempfile; a=Armazenamento(tempfile.mkdtemp()); t=a.cifrar('teste'); assert a.decifrar(t)=='teste'; print('Cofre do Windows OK')"
+
+      - name: Gerar o MSI
+        run: python setup.py bdist_msi
+
+      - name: Conferir o MSI
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem dist\*.msi | Select-Object -First 1
+          if (-not $msi) { throw "MSI não foi gerado" }
+          "{0} ({1:N1} MB)" -f $msi.Name, ($msi.Length / 1MB)
+
+      - name: Testar instalação silenciosa e abrir o programa
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem dist\*.msi | Select-Object -First 1).FullName
+          $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /l*v install.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content install.log -Tail 60; throw "msiexec saiu com $($p.ExitCode)" }
+          $exe = Get-ChildItem "C:\Program Files*\Adge Group" -Recurse -Filter AdgeNFDownloader.exe | Select-Object -First 1
+          if (-not $exe) { throw "Executável instalado não encontrado" }
+          $app = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 6
+          if ($app.HasExited) { throw "O programa fechou sozinho (código $($app.ExitCode))" }
+          Stop-Process -Id $app.Id -Force
+          "Programa instalado abriu e ficou rodando."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Adge-NF-Downloader-MSI
+          path: dist/*.msi
+
+      - name: Publicar na Release (quando for uma tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.msi
+          generate_release_notes: true

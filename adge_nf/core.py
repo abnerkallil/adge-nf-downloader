@@ -1,6 +1,5 @@
 """Núcleo (sem interface): ADN, leitura do XML, nomes, plano do período, pastas e gravação."""
 import base64
-import csv
 import datetime as dt
 import gzip
 import io
@@ -288,7 +287,7 @@ def classificar(d: dict, cnpj: str):
 
 
 def montar_plano(docs: list, cnpj: str, ano: int, mes: int, tipos: set, prefixos: dict = None,
-                 limite_nome: int = LIMITE_NOME):
+                 limite_nome: int = LIMITE_NOME, extras: dict = None):
     """Aplica período, tipos ('prestado'/'tomado'), cancelamentos e nomes. Devolve (arquivos, resumo, avisos)."""
     ini, fim = limites_mes(ano, mes)
     avisos, lidos, canceladas, terceiros = [], [], set(), 0
@@ -320,6 +319,8 @@ def montar_plano(docs: list, cnpj: str, ano: int, mes: int, tipos: set, prefixos
         r = resumo.setdefault(cat, {"qtd": 0, "canceladas": 0, "valor": 0.0, "liquido": 0.0, "iss": 0.0})
         if d["chave"] in canceladas:
             r["canceladas"] += 1
+            if extras is not None:
+                extras.setdefault("canceladas", []).append({"nome": "", "xml": x["xml"], "cat": cat, "doc": d})
             continue
         r["qtd"] += 1
         r["valor"] += d["valor"]
@@ -416,25 +417,6 @@ def texto_relatorio(empresa, cnpj, mes, ano, linhas, ok=True):
         f"Data de Processamento: {agora}", "-" * 80, "", *linhas, ""])
 
 
-def gerar_csv(arquivos, resumo) -> str:
-    buf = io.StringIO()
-    w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
-    br = lambda v: f"{v:.2f}".replace(".", ",")
-    w.writerow(["RESUMO"])
-    w.writerow(["Categoria", "Qtd notas", "Canceladas (fora)", "Valor", "Valor líquido", "ISS"])
-    for cat, r in resumo.items():
-        w.writerow([CATEGORIAS[cat]["relatorio"], r["qtd"], r["canceladas"], br(r["valor"]), br(r["liquido"]), br(r["iss"])])
-    w.writerow([])
-    w.writerow(["DETALHE"])
-    w.writerow(["Categoria", "Número", "Emissão", "Emitente", "CNPJ emitente", "Tomador", "CNPJ tomador",
-                "Valor", "Valor líquido", "ISS", "Chave"])
-    for a in arquivos:
-        d = a["doc"]
-        w.writerow([CATEGORIAS[a["cat"]]["relatorio"], d["numero"], d["emissao"], d["emitente_nome"], d["emitente_doc"],
-                    d["tomador_nome"], d["tomador_doc"], br(d["valor"]), br(d["valor_liquido"]), br(d["iss"]), d["chave"]])
-    return "\ufeff" + buf.getvalue()
-
-
 # ----------------------------------------------------------------------------- fluxo completo
 def tipos_da_empresa(emp: dict) -> set:
     return {t for t in ("prestado", "tomado") if emp.get("tipos", {}).get(t)}
@@ -460,13 +442,18 @@ def prefixos_da_empresa(emp: dict) -> dict:
                               ("servico_tomado", emp.get("prefixo_tomado", "").strip())) if v}
 
 
-def planejar(emp: dict, docs: list, cnpj: str, ano: int, mes: int, destino: Path = None):
+def planejar(emp: dict, docs: list, cnpj: str, ano: int, mes: int, destino: Path = None, extras: dict = None):
     limite = limite_para_destino(destino) if destino else LIMITE_NOME
-    return montar_plano(docs, cnpj, ano, mes, tipos_da_empresa(emp), prefixos_da_empresa(emp), limite)
+    return montar_plano(docs, cnpj, ano, mes, tipos_da_empresa(emp), prefixos_da_empresa(emp), limite, extras)
 
 
-def salvar_notas(emp: dict, arquivos: list, resumo: dict, cnpj: str, ano: int, mes: int, log=lambda *_: None):
-    """Grava os XMLs (e relatório/CSV, se ligados). Devolve (pasta, contagem)."""
+def nome_planilha(mes: int, ano: int) -> str:
+    return f"Resumo Notas - {mes:02d}-{ano}.xlsx"
+
+
+def salvar_notas(emp: dict, arquivos: list, resumo: dict, cnpj: str, ano: int, mes: int, log=lambda *_: None,
+                 canceladas: list = None):
+    """Grava os XMLs (e relatório/planilha, se ligados). Devolve (pasta, contagem)."""
     destino, _ = resolver_destino(Path(emp["destino"]), emp.get("estrutura", "adge"), ano, mes, criar=True)
     contagem, linhas = {}, []
     for f in arquivos:
@@ -478,6 +465,12 @@ def salvar_notas(emp: dict, arquivos: list, resumo: dict, cnpj: str, ano: int, m
     if emp.get("relatorio", True) and arquivos:
         gravar(destino, f"[Sucesso] Relatorio de Organizacao - {empresa[:30]} - {mes_exibicao(mes)} de {ano}.txt",
                texto_relatorio(empresa, cnpj, mes, ano, linhas))
-    if emp.get("csv", False) and arquivos:
-        gravar(destino, f"Resumo Notas - {mes:02d}-{ano}.csv", gerar_csv(arquivos, resumo))
+    if emp.get("planilha", emp.get("csv", False)) and arquivos:
+        from . import planilha
+        alvo = Path(destino) / nome_planilha(mes, ano)
+        n = 2
+        while alvo.exists():                              # não sobrescreve: "(2)", "(3)"...
+            alvo = Path(destino) / f"Resumo Notas - {mes:02d}-{ano} ({n}).xlsx"
+            n += 1
+        planilha.gerar_xlsx(alvo, empresa, ano, mes, arquivos, resumo, canceladas)
     return destino, contagem

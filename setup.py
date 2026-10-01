@@ -20,7 +20,7 @@ atalhos = [
 
 build_exe = {
     "packages": ["adge_nf", "tkinter", "requests", "requests_pkcs12", "keyring", "keyring.backends", "win32ctypes",
-                 "cryptography", "certifi", "urllib3", "idna", "charset_normalizer"],
+                 "openpyxl", "et_xmlfile", "cryptography", "certifi", "urllib3", "idna", "charset_normalizer"],
     "includes": ["keyring.backends.Windows"],
     "include_files": [("adge_nf/icone.ico", "icone.ico")],
     "excludes": ["unittest", "pydoc", "test", "distutils"],

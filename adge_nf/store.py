@@ -35,7 +35,7 @@ def empresa_padrao() -> dict:
         "destino": "", "estrutura": "ano_mes",
         "tipos": {"prestado": True, "tomado": True}, "nfe": False,
         "acao": "ambos",              # ambos | calcular | baixar
-        "relatorio": True, "csv": False,
+        "relatorio": True, "planilha": False,
         "prefixo_prestado": "", "prefixo_tomado": "",
     }
 

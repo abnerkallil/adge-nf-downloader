@@ -24,7 +24,7 @@ Programa **gratuito** para Windows que baixa as **NFS-e Nacional** (emitidas e r
 5. Selecione a empresa (ou dê duplo clique) → escolha o **mês** na lista (o ano atual vem do relógio do computador;
    para outro ano use **Alterar ano**, formato AAAA) → **Buscar notas**.
 6. Confira o **faturamento** e a lista de notas. Clique em **Baixar XMLs para a pasta** para gravar.
-   Também dá para **Copiar totais** ou **Exportar CSV** (abre no Excel).
+   Também dá para **Copiar totais** ou **Exportar planilha** (Excel .xlsx).
 
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
 

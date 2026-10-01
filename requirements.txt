@@ -2,3 +2,4 @@ requests>=2.31
 requests-pkcs12>=1.22
 cryptography>=42
 keyring>=25
+openpyxl>=3.1

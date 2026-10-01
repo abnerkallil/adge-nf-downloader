@@ -95,6 +95,18 @@ def principal():
 
         b._copiar()
         assert "1.250,50" in app.clipboard_get()
+        try:
+            import openpyxl
+        except ImportError:
+            openpyxl = None
+        if openpyxl:
+            alvo = t / "export.xlsx"
+            A.filedialog.asksaveasfilename = lambda **k: str(alvo)
+            b._exportar_planilha()
+            wbk = openpyxl.load_workbook(alvo)
+            assert wbk.sheetnames == ["Geral", "Prestado", "Tomado", "Canceladas"], wbk.sheetnames
+            assert abs(wbk["Geral"]["C3"].value - 1250.50) < 0.001
+            passo("exportar planilha Excel")
         b._gravar()
         pasta = t / "cli" / "2026" / "09-Setembro"
         nomes = [p.name for p in pasta.iterdir()]

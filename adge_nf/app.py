@@ -154,7 +154,7 @@ class DialogoEmpresa(Modal):
         self.v_tom = tk.BooleanVar(value=e["tipos"].get("tomado", True))
         self.v_nfe = tk.BooleanVar(value=False)
         self.v_acao = v(e["acao"])
-        self.v_rel, self.v_csv = tk.BooleanVar(value=e["relatorio"]), tk.BooleanVar(value=e["csv"])
+        self.v_rel, self.v_csv = tk.BooleanVar(value=e["relatorio"]), tk.BooleanVar(value=e.get("planilha", e.get("csv", False)))
         self.v_lembrar = tk.BooleanVar(value=bool(e["senha_cifrada"]) or self.novo)
         self.v_pref_prest, self.v_pref_tom = v(e["prefixo_prestado"]), v(e["prefixo_tomado"])
         self._montar()
@@ -232,7 +232,7 @@ class DialogoEmpresa(Modal):
         o = ttk.Frame(self.f_destino)
         o.grid(row=3, column=0, columnspan=3, sticky="w", pady=(8, 0))
         ttk.Checkbutton(o, text="Criar o relatório de organização (.txt)", variable=self.v_rel).pack(anchor="w")
-        ttk.Checkbutton(o, text="Criar resumo em CSV (abre no Excel)", variable=self.v_csv).pack(anchor="w")
+        ttk.Checkbutton(o, text="Criar planilha Excel com resumo e abas (.xlsx)", variable=self.v_csv).pack(anchor="w")
         av = ttk.Frame(self.f_destino)
         av.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         av.columnconfigure(1, weight=1)
@@ -333,7 +333,7 @@ class DialogoEmpresa(Modal):
                 return
         e.update({"nome": nome, "cnpj": cnpj, "pfx": pfx, "destino": self.v_destino.get().strip(),
                   "estrutura": estrutura, "tipos": {"prestado": self.v_prest.get(), "tomado": self.v_tom.get()},
-                  "nfe": False, "acao": acao, "relatorio": self.v_rel.get(), "csv": self.v_csv.get(),
+                  "nfe": False, "acao": acao, "relatorio": self.v_rel.get(), "planilha": self.v_csv.get(),
                   "prefixo_prestado": self.v_pref_prest.get().strip(), "prefixo_tomado": self.v_pref_tom.get().strip()})
         try:
             if not self.v_lembrar.get():
@@ -446,7 +446,7 @@ class DialogoBusca(Modal):
         self.f_botoes = ttk.Frame(self)
         self.l_destino = ttk.Label(self, text="", style="Muted.TLabel", wraplength=720, justify="left")
         self.b_gravar = botao(self.f_botoes, "Baixar XMLs para a pasta", self._gravar, primario=True)
-        self.b_csv = botao(self.f_botoes, "Exportar CSV...", self._exportar_csv)
+        self.b_csv = botao(self.f_botoes, "Exportar planilha...", self._exportar_planilha)
         self.b_copiar = botao(self.f_botoes, "Copiar totais", self._copiar)
         self.b_pasta = botao(self.f_botoes, "Escolher pasta...", self._escolher_pasta)
         botao(self.f_botoes, "Fechar", self._fechar).pack(side="right")
@@ -563,9 +563,10 @@ class DialogoBusca(Modal):
                 aviso_dest = "Destino: " + " \\ ".join([Path(emp["destino"]).name] + [n + (" (será criada)" if novo else "") for n, novo in trilha])
             except ErroAdge as e:
                 aviso_dest = f"⚠ {e} Use \"Escolher pasta...\" para indicar onde salvar os XMLs."
-        arquivos, resumo, avisos = core.planejar(emp, docs, cnpj, ano, mes, destino_prev)
+        extras = {}
+        arquivos, resumo, avisos = core.planejar(emp, docs, cnpj, ano, mes, destino_prev, extras)
         self.resultado = {"emp": emp, "docs": docs, "cnpj": cnpj, "ano": ano, "mes": mes, "arquivos": arquivos,
-                          "resumo": resumo, "avisos": avisos, "destino_ok": destino_prev is not None}
+                          "resumo": resumo, "avisos": avisos, "canceladas": extras.get("canceladas", []), "destino_ok": destino_prev is not None}
         self.l_status.config(text=f"{len(docs)} documento(s) consultados.")
         mostrar_totais = emp["acao"] != "baixar"
         for chave, cat in (("prestado", "servico_prestado"), ("tomado", "servico_tomado")):
@@ -629,7 +630,7 @@ class DialogoBusca(Modal):
                                    "Arquivos que já existirem não serão sobrescritos.", parent=self):
             return
         try:
-            destino, contagem = core.salvar_notas(r["emp"], r["arquivos"], r["resumo"], r["cnpj"], r["ano"], r["mes"])
+            destino, contagem = core.salvar_notas(r["emp"], r["arquivos"], r["resumo"], r["cnpj"], r["ano"], r["mes"], canceladas=r["canceladas"])
         except (ErroAdge, OSError) as e:
             messagebox.showerror(NOME_APP, f"Não consegui gravar: {e}", parent=self)
             return
@@ -652,15 +653,26 @@ class DialogoBusca(Modal):
             self.clipboard_append(self._texto_totais())
             self.l_status.config(text="Totais copiados.")
 
-    def _exportar_csv(self):
+    def _exportar_planilha(self):
         r = self.resultado
         if not r:
             return
-        caminho = filedialog.asksaveasfilename(parent=self, defaultextension=".csv", filetypes=[("CSV (Excel)", "*.csv")],
-                                               initialfile=f"Resumo Notas - {r['mes']:02d}-{r['ano']}.csv")
-        if caminho:
-            Path(caminho).write_text(core.gerar_csv(r["arquivos"], r["resumo"]), encoding="utf-8")
-            self.l_status.config(text="CSV salvo.")
+        caminho = filedialog.asksaveasfilename(parent=self, defaultextension=".xlsx", filetypes=[("Planilha Excel", "*.xlsx")],
+                                               initialfile=core.nome_planilha(r["mes"], r["ano"]))
+        if not caminho:
+            return
+        try:
+            from . import planilha
+            planilha.gerar_xlsx(caminho, r["emp"]["nome"], r["ano"], r["mes"], r["arquivos"], r["resumo"], r["canceladas"])
+        except PermissionError:
+            messagebox.showerror(NOME_APP, "Não consegui salvar. Se a planilha estiver aberta no Excel, feche-a e tente de novo.", parent=self)
+            return
+        except (OSError, ImportError) as e:
+            messagebox.showerror(NOME_APP, f"Não consegui criar a planilha: {e}", parent=self)
+            return
+        self.l_status.config(text="Planilha salva.")
+        if messagebox.askyesno(NOME_APP, "Planilha salva. Abrir a pasta agora?", parent=self):
+            abrir_pasta(Path(caminho).parent)
 
     def _fechar(self):
         if self.trabalhando:

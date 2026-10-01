@@ -175,7 +175,7 @@ class Fluxo(unittest.TestCase):
             pfx = t / "c.pfx"
             pfx.write_bytes(b"x")
             emp = {"nome": "Exemplo", "cnpj": "11.222.333/0001-81", "pfx": str(pfx), "destino": str(t / "cli"), "estrutura": "ano_mes",
-                   "tipos": {"prestado": True, "tomado": True}, "relatorio": True, "csv": True, "prefixo_prestado": "", "prefixo_tomado": ""}
+                   "tipos": {"prestado": True, "tomado": True}, "relatorio": True, "planilha": True, "prefixo_prestado": "", "prefixo_tomado": ""}
             s = SessaoFalsa([(0, [item(1, xml_nfse(c(1), emit_cnpj=CNPJ, emit_nome=NOME, valor="390.00", dh="2026-09-01T10:00:00-03:00")),
                                   item(2, xml_nfse(c(2), toma_cnpj=CNPJ, toma_nome=NOME, valor="100.00", dh="2026-09-02T10:00:00-03:00"))])])
             docs, cnpj = core.buscar(emp, "senha", 2026, 9, sessao=s)
@@ -185,7 +185,7 @@ class Fluxo(unittest.TestCase):
             self.assertEqual(resumo["servico_prestado"]["valor"], 390.0)
             destino, cont = core.salvar_notas(emp, arqs, resumo, cnpj, 2026, 9)
             nomes = sorted(p.name for p in destino.iterdir())
-            self.assertEqual(len(nomes), 4)  # 2 XMLs + relatório + CSV
+            self.assertEqual(len(nomes), 4)  # 2 XMLs + relatório + planilha
             self.assertTrue(any(n.startswith("[Sucesso] Relatorio de Organizacao") for n in nomes))
             self.assertEqual(core.salvar_notas(emp, arqs, resumo, cnpj, 2026, 9)[1], {"ja_existia": 2})
 

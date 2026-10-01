@@ -125,31 +125,5 @@ problemas de pequenas empresas de forma gratuita.
 Na primeira abertura, o programa mostra um cartão de boas-vindas com essa apresentação (ele pode ser revisto em
 **Configurações → Sobre**). Quem quiser contribuir pode deixar uma avaliação aqui no GitHub ou no perfil da Adge no Google.
 
-## Para desenvolvedores
-```
-pip install -r requirements-build.txt
-python -m unittest discover -s tests -p "test_*.py" -v   # núcleo, planilha, regimes, relatórios e armazenamento
-python tests/smoke_gui.py                                 # abre a janela e simula uma busca
-python adge_nf_downloader.pyw                             # executa o programa
-python setup.py bdist_msi                                 # gera o MSI (somente no Windows)
-```
-
-### Itens e relatórios de atualização
-Cada função do programa tem um código fixo (`ITEM-NN`), listado em `adge_nf/itens.py`. Cada versão tem um relatório em
-`docs/atualizacoes/vX.Y.Z.md` (veja `docs/atualizacoes/README.md` para o formato). A seção **Resumo** vira o texto do aviso de
-atualização do programa e o arquivo inteiro vira o texto da Release. Os testes conferem o formato e os códigos.
-
-### Publicar uma versão nova
-O MSI é gerado pelo GitHub Actions (`.github/workflows/build.yml`) sempre que uma tag `vX.Y.Z` é enviada ao repositório:
-1. Escrever o relatório `docs/atualizacoes/vX.Y.Z.md` (e registrar códigos novos em `adge_nf/itens.py`).
-2. Fazer o commit e criar a tag da versão (sempre `vX.Y.Z`, com o "v", e maior que a anterior).
-3. Enviar (push) o commit e a tag.
-4. O fluxo ajusta a versão pela tag, roda os testes, gera o `.msi` e o `.msi.sha256`, e anexa os dois à Release,
-   usando o relatório da versão como texto.
-5. Conferir se a nova Release está marcada como **Latest**, pois é ela que o atualizador consulta.
-
-O `REPO_GITHUB` em `adge_nf/__init__.py` aponta para o repositório consultado (vazio = sem verificação de versão).
-O `UpgradeCode` em `setup.py` nunca deve mudar: é ele que faz o instalador novo substituir o antigo.
-
 ## Licença
 MIT.

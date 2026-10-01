@@ -28,6 +28,17 @@ Programa **gratuito** para Windows que baixa as **NFS-e Nacional** (emitidas e r
 
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
 
+## Atualizações
+Ao abrir, o programa confere (no máximo uma vez por dia) se há uma versão nova na página de Releases do projeto.
+Se houver, aparece um aviso com as novidades e três botões:
+- **Atualizar agora**: baixa o instalador, confere o código de verificação (SHA-256) publicado na Release, fecha o
+  programa, instala a versão nova (o Windows pede permissão de administrador) e reabre. Empresas e senhas salvas são mantidas.
+- **Lembrar depois**: avisa de novo em 3 dias.
+- **Pular esta versão**: não avisa sobre essa versão; uma versão mais nova volta a avisar.
+
+Em **Configurações** dá para desligar a verificação ou clicar em **Verificar agora**. Se o arquivo baixado não
+bater com o código publicado, a instalação é cancelada. O programa nunca atualiza sozinho sem você clicar.
+
 ## Organização dos arquivos
 Por empresa você escolhe:
 - **Padrão Adge**: `Cliente \ Departamento Fiscal \ Notas Fiscais \ AAAA \ MM-Mês` (nomes achados por aproximação;
@@ -64,9 +75,15 @@ python tests/smoke_gui.py                                 # abre a janela e simu
 python adge_nf_downloader.pyw                             # roda o programa
 python setup.py bdist_msi                                 # gera o MSI (somente no Windows)
 ```
-O MSI é gerado automaticamente pelo GitHub Actions (`.github/workflows/build.yml`): crie uma tag `v1.0.0`
-e o instalador aparece na página de Releases.
+### Publicar uma versão nova
+O MSI é gerado pelo GitHub Actions (`.github/workflows/build.yml`). Para lançar a versão 1.2.0:
+1. Faça o push das mudanças.
+2. No GitHub: **Releases → Create a new release**, tag `v1.2.0` (sempre `vX.Y.Z`, e maior que a anterior), escreva as
+   novidades no texto da Release (elas aparecem no aviso do programa) e publique.
+3. O fluxo ajusta a versão pela tag, roda os testes, gera o `.msi` e o `.msi.sha256`, e anexa os dois à Release.
+   O programa dos usuários passa a avisar sozinho.
 
-Para ativar o aviso de versão nova, preencha `REPO_GITHUB` em `adge_nf/__init__.py` (ex.: `"usuario/adge-nf-downloader"`).
+O `REPO_GITHUB` em `adge_nf/__init__.py` aponta para o repositório consultado (vazio = sem verificação de versão).
+O `UpgradeCode` em `setup.py` nunca deve mudar: é ele que faz o instalador novo substituir o antigo.
 
 Licença MIT.

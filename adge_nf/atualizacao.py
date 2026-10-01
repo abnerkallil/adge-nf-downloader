@@ -1,23 +1,178 @@
-"""Aviso (opcional) de versão nova: consulta a última Release pública do projeto no GitHub."""
+"""Atualização do programa pela página de Releases do projeto no GitHub.
+
+Fluxo: consultar() -> aviso com botões -> baixar() confere o SHA-256 publicado na Release -> instalar_e_reabrir().
+Nunca instala sozinho: só depois de a pessoa clicar em "Atualizar agora".
+"""
+import datetime as dt
+import hashlib
+import os
 import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 from . import REPO_GITHUB, VERSAO
+from .core import Cancelado, ErroAdge
+
+HEX64 = re.compile(r"\b([0-9a-fA-F]{64})\b")
 
 
 def _tupla(v: str):
     return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
 
 
-def versao_nova(sessao=None):
-    """Devolve (tag, url) da versão mais nova que a instalada, ou None."""
-    if not REPO_GITHUB:
+def _hoje(hoje=None) -> dt.date:
+    return hoje or dt.date.today()
+
+
+def notas_legiveis(md: str) -> str:
+    """Tira a marcação do Markdown das notas da Release para mostrar como texto simples."""
+    linhas = []
+    for l in (md or "").replace("\r", "").split("\n"):
+        l = re.sub(r"^\s{0,3}#{1,6}\s*", "", l)                  # títulos
+        l = re.sub(r"^\s*[-*+]\s+", "\u2022 ", l)                  # listas
+        l = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", l)           # [texto](link)
+        l = re.sub(r"(\*\*|__|`)", "", l)                         # negrito e código
+        linhas.append(l.rstrip())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(linhas)).strip()
+
+
+# ----------------------------------------------------------------------------- consulta
+def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
+    """Devolve os dados da última Release se ela for mais nova que `versao`; senão None.
+    {tag, url, notas, msi: {nome, url, tamanho, sha256} | None}"""
+    repo = REPO_GITHUB if repo is None else repo
+    if not repo:
         return None
-    import requests
-    r = (sessao or requests).get(f"https://api.github.com/repos/{REPO_GITHUB}/releases/latest", timeout=10)
+    s = sessao
+    if s is None:
+        import requests
+        s = requests
+    r = s.get(f"https://api.github.com/repos/{repo}/releases/latest", timeout=10,
+              headers={"Accept": "application/vnd.github+json"})
     if r.status_code != 200:
-        return None
+        return None  # sem Release ainda, sem internet ou limite da API: não incomoda o usuário
     j = r.json()
     tag = j.get("tag_name", "")
-    if tag and _tupla(tag) > _tupla(VERSAO):
-        return tag, j.get("html_url", f"https://github.com/{REPO_GITHUB}/releases")
-    return None
+    if not tag or _tupla(tag) <= _tupla(versao):
+        return None
+    info = {"tag": tag, "url": j.get("html_url") or f"https://github.com/{repo}/releases",
+            "notas": notas_legiveis(j.get("body") or ""), "msi": None, "repo": repo}
+    assets = j.get("assets", [])
+    msi = next((a for a in assets if a.get("name", "").lower().endswith(".msi")), None)
+    if msi:
+        sha = None
+        dig = str(msi.get("digest") or "")
+        if dig.lower().startswith("sha256:"):
+            sha = dig.split(":", 1)[1].strip().lower()
+        if not sha:
+            arq = next((a for a in assets if a.get("name", "").lower() == msi["name"].lower() + ".sha256"), None)
+            if arq:
+                try:
+                    m = HEX64.search(s.get(arq["browser_download_url"], timeout=10).text)
+                    sha = m[1].lower() if m else None
+                except Exception:
+                    sha = None
+        info["msi"] = {"nome": msi["name"], "url": msi["browser_download_url"], "tamanho": msi.get("size"), "sha256": sha}
+    return info
+
+
+# ----------------------------------------------------------------------------- preferências (quando avisar)
+def _prefs(prefs: dict) -> dict:
+    return prefs.setdefault("atualizacao", {})
+
+
+def deve_checar(prefs: dict, hoje=None) -> bool:
+    """No máximo uma consulta por dia."""
+    return _prefs(prefs).get("ultima_checagem") != _hoje(hoje).isoformat()
+
+
+def marcar_checagem(prefs: dict, hoje=None):
+    _prefs(prefs)["ultima_checagem"] = _hoje(hoje).isoformat()
+
+
+def deve_avisar(info: dict, prefs: dict, hoje=None) -> bool:
+    p = _prefs(prefs)
+    if p.get("pular") == info["tag"]:
+        return False
+    ate = p.get("lembrar_ate")
+    return not (ate and _hoje(hoje).isoformat() <= ate)
+
+
+def lembrar_depois(prefs: dict, dias: int = 3, hoje=None):
+    _prefs(prefs)["lembrar_ate"] = (_hoje(hoje) + dt.timedelta(days=dias)).isoformat()
+
+
+def pular_versao(prefs: dict, tag: str):
+    _prefs(prefs)["pular"] = tag
+
+
+# ----------------------------------------------------------------------------- download e instalação
+def baixar(msi: dict, progresso=lambda feito, total: None, cancelar=lambda: False, sessao=None, pasta=None, repo: str = None) -> Path:
+    """Baixa o MSI, confere o SHA-256 publicado na Release e devolve o caminho. Apaga o arquivo se algo não bater."""
+    repo = REPO_GITHUB if repo is None else repo
+    if not msi.get("sha256"):
+        raise ErroAdge("Essa versão não traz o código de verificação (SHA-256), então não vou instalá-la automaticamente. "
+                       "Use \"Abrir a página de download\".")
+    if not str(msi["url"]).startswith(f"https://github.com/{repo}/releases/download/"):
+        raise ErroAdge("O endereço de download não é o da página oficial de versões do projeto.")
+    s = sessao
+    if s is None:
+        import requests
+        s = requests
+    pasta = Path(pasta or tempfile.mkdtemp(prefix="adge-nf-update-"))
+    destino = pasta / re.sub(r"[^\w.\-]", "_", msi["nome"])
+    parcial = destino.with_suffix(".part")
+    h = hashlib.sha256()
+    feito = 0
+    try:
+        r = s.get(msi["url"], stream=True, timeout=30)
+        if r.status_code != 200:
+            raise ErroAdge(f"Não consegui baixar a atualização (HTTP {r.status_code}).")
+        total = int(r.headers.get("Content-Length") or msi.get("tamanho") or 0)
+        with open(parcial, "wb") as f:
+            for bloco in r.iter_content(65536):
+                if cancelar():
+                    raise Cancelado()
+                f.write(bloco)
+                h.update(bloco)
+                feito += len(bloco)
+                progresso(feito, total)
+        if msi.get("tamanho") and feito != msi["tamanho"]:
+            raise ErroAdge("O download veio incompleto. Tente de novo.")
+        if h.hexdigest().lower() != msi["sha256"].lower():
+            raise ErroAdge("A verificação de integridade falhou: o arquivo baixado não é o publicado. A instalação foi cancelada.")
+        parcial.replace(destino)
+        return destino
+    except ErroAdge:
+        parcial.unlink(missing_ok=True)
+        raise
+    except Cancelado:
+        parcial.unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        parcial.unlink(missing_ok=True)
+        raise ErroAdge(f"Não consegui baixar a atualização: {e}") from e
+
+
+def comando_instalacao(msi: Path, exe: str = None) -> str:
+    """Linha de comando do Windows: espera o app fechar, roda o instalador (UAC) e reabre o programa."""
+    c = 'ping -n 3 127.0.0.1 >nul & msiexec /i "{}" /passive /norestart'.format(msi)
+    if exe:
+        c += ' & start "" "{}"'.format(exe)
+    return 'cmd.exe /d /s /c "{}"'.format(c)
+
+
+def instalar_e_reabrir(msi: Path, exe: str = None):
+    """Dispara o instalador desacoplado do app. Quem chamou deve fechar o programa logo depois."""
+    if os.name != "nt":
+        raise ErroAdge("A instalação automática só funciona no Windows.")
+    exe = exe or (sys.executable if getattr(sys, "frozen", False) else None)
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen(comando_instalacao(msi, exe), creationflags=flags, close_fds=True)
+
+
+def pode_instalar_sozinho() -> bool:
+    """Só no programa instalado (.exe), nunca rodando do código-fonte."""
+    return os.name == "nt" and bool(getattr(sys, "frozen", False))

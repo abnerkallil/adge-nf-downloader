@@ -11,7 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from adge_nf import app as A  # noqa: E402
 from adge_nf import core  # noqa: E402
-from adge_nf.store import Armazenamento, empresa_padrao  # noqa: E402
+from adge_nf.store import Armazenamento  # noqa: E402
 from fixtures import SessaoFalsa, item, xml_nfse  # noqa: E402
 
 CNPJ = "11222333000181"
@@ -49,6 +49,7 @@ def principal():
         pfx = t / "c.pfx"
         pfx.write_bytes(b"x")
         store = Armazenamento(t / "dados", keyring_mod=CofreFalso())
+        store.preferencias["verificar_atualizacao"] = False  # o teste não conversa com o GitHub de verdade
         app = A.App(store)
         app.update()
         passo("janela principal abre")
@@ -118,6 +119,72 @@ def principal():
         assert not b3.trabalhando
         b3.destroy()
         passo("erro do ADN vira mensagem")
+
+        # --- atualização: aviso, baixar com integridade, instalar, lembrar depois, pular
+        import hashlib
+        from adge_nf import atualizacao
+        from adge_nf import REPO_GITHUB
+        conteudo = b"msi-de-teste" * 5000
+        sha = hashlib.sha256(conteudo).hexdigest()
+        url = f"https://github.com/{REPO_GITHUB}/releases/download/v9.9.9/App.msi"
+
+        class RespA:
+            def __init__(self, code=200, j=None, c=b""):
+                self.status_code, self._j, self._c, self.headers = code, j, c, {"Content-Length": str(len(c))}
+            def json(self): return self._j
+            def iter_content(self, n):
+                for i in range(0, len(self._c), n):
+                    yield self._c[i:i + n]
+
+        class SessaoA:
+            def __init__(self, c=conteudo): self.c = c
+            def get(self, u, **k):
+                if u.endswith("/releases/latest"):
+                    return RespA(200, {"tag_name": "v9.9.9", "html_url": "https://x", "body": "Agora suporta NF-e",
+                                       "assets": [{"name": "App.msi", "browser_download_url": url, "size": len(conteudo), "digest": "sha256:" + sha}]})
+                return RespA(200, c=self.c)
+
+        app.sessao_att = SessaoA()
+        abertos = []
+        orig = A.DialogoAtualizacao
+        def fabrica(pai, st, info, **k):
+            d = orig(pai, st, info, ao_instalar=lambda caminho: abertos.append(caminho), pode_instalar=True, sessao=app.sessao_att)
+            d.after(100, d._atualizar)           # simula o clique em "Atualizar agora"
+            d.after(2500, lambda: d.winfo_exists() and d.destroy())
+            return d
+        A.DialogoAtualizacao = fabrica
+        app._checar_atualizacao(manual=True)
+        assert esperar(lambda: abertos, app, 15), f"instalação não foi disparada: {mensagens}"
+        assert pathlib.Path(abertos[0]).read_bytes() == conteudo
+        passo("atualização baixa, confere a integridade e dispara a instalação")
+        A.DialogoAtualizacao = orig
+
+        # arquivo adulterado: recusa e não instala
+        abertos.clear()
+        app.sessao_att = SessaoA(conteudo[:-1] + b"X")
+        app.info_att = None
+        A.DialogoAtualizacao = fabrica
+        app._checar_atualizacao(manual=True)
+        esperar(lambda: False, app, 4)
+        assert not abertos
+        A.DialogoAtualizacao = orig
+        passo("arquivo adulterado não é instalado")
+
+        # lembrar depois e pular
+        info = atualizacao.consultar(SessaoA(), versao="1.0.0")
+        d = orig(app, store, info, pode_instalar=False)
+        d.update()
+        assert "Agora suporta NF-e" in d.txt.get("1.0", "end")
+        assert d.b_ok.cget("text") == "Abrir a página de download"
+        d._depois()
+        assert not atualizacao.deve_avisar(info, store.preferencias)
+        store.preferencias["atualizacao"].pop("lembrar_ate")
+        d = orig(app, store, info, pode_instalar=True)
+        d.update()
+        assert d.b_ok.cget("text") == "Atualizar agora"
+        d._pular()
+        assert store.preferencias["atualizacao"]["pular"] == "v9.9.9"
+        passo("lembrar depois e pular versão")
 
         # --- configurações
         store.trocar_modo("mestra123")

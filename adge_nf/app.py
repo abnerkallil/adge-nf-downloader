@@ -10,7 +10,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import NOME_APP, VERSAO, core
+from . import NOME_APP, VERSAO, atualizacao, core
 from .core import Cancelado, ErroAdge
 from .store import Armazenamento, empresa_padrao
 
@@ -649,6 +649,145 @@ class DialogoBusca(Modal):
         self.destroy()
 
 
+# ============================================================================= atualização
+class DialogoAtualizacao(Modal):
+    """Aviso de versão nova com Atualizar agora / Lembrar depois / Pular esta versão."""
+
+    def __init__(self, pai, store: Armazenamento, info: dict, ao_instalar=None, sessao=None, pode_instalar=None):
+        super().__init__(pai, "Atualização disponível")
+        self.store, self.info, self.sessao = store, info, sessao
+        self.ao_instalar = ao_instalar or (lambda caminho: (atualizacao.instalar_e_reabrir(caminho), pai.winfo_toplevel().destroy()))
+        self.pode_instalar = atualizacao.pode_instalar_sozinho() if pode_instalar is None else pode_instalar
+        self.fila: "queue.Queue" = queue.Queue()
+        self.cancelar_flag = False
+        self.baixando = False
+        self._montar()
+        self.protocol("WM_DELETE_WINDOW", self._fechar)
+        self.bind("<Escape>", lambda *_: self._fechar())
+        self.mostrar()
+        self.after(100, self._ler_fila)
+
+    def _montar(self):
+        ttk.Label(self, text="Nova versão disponível", style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(self, text=f"{self.info['tag']}  (você está na v{VERSAO})", style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
+        ttk.Label(self, text="Novidades", style="Sec.TLabel").pack(anchor="w")
+        caixa = ttk.Frame(self)
+        caixa.pack(fill="both", expand=True, pady=(4, 0))
+        self.txt = tk.Text(caixa, width=70, height=9, wrap="word", bg=BRANCO, fg=TEXTO, relief="solid", bd=1,
+                           highlightthickness=0, font=FONTE, padx=8, pady=6)
+        sb = ttk.Scrollbar(caixa, orient="vertical", command=self.txt.yview)
+        self.txt.configure(yscrollcommand=sb.set)
+        self.txt.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y")
+        self.txt.insert("1.0", self.info.get("notas") or "Esta versão não traz descrição das novidades.")
+        self.txt.config(state="disabled")
+        self.l_status = ttk.Label(self, text="", style="Muted.TLabel", wraplength=520, justify="left")
+        self.l_status.pack(anchor="w", pady=(10, 0))
+        self.barra = ttk.Progressbar(self, mode="determinate", maximum=100)
+        linha = ttk.Frame(self)
+        linha.pack(fill="x", pady=(12, 0))
+        self.f_botoes = linha
+        msi = self.info.get("msi")
+        if self.pode_instalar and msi and msi.get("sha256"):
+            self.b_ok = botao(linha, "Atualizar agora", self._atualizar, primario=True)
+            aviso = "O Windows vai pedir permissão de administrador. Suas empresas e senhas salvas são mantidas."
+        else:
+            self.b_ok = botao(linha, "Abrir a página de download", self._abrir_pagina, primario=True)
+            aviso = ("Esta cópia do programa não pode se atualizar sozinha. Baixe o instalador na página."
+                     if not self.pode_instalar else "Esta versão não tem verificação de integridade; baixe pela página.")
+        self.l_status.config(text=aviso)
+        self.b_ok.pack(side="left")
+        self.b_depois = botao(linha, "Lembrar depois", self._depois)
+        self.b_depois.pack(side="left", padx=(8, 0))
+        self.b_pular = botao(linha, "Pular esta versão", self._pular)
+        self.b_pular.pack(side="right")
+
+    # ------------------------------------------------------------------ escolhas
+    def _salvar_prefs(self):
+        try:
+            self.store.salvar()
+        except OSError:
+            pass
+
+    def _depois(self):
+        atualizacao.lembrar_depois(self.store.preferencias, 3)
+        self._salvar_prefs()
+        self._fechar()
+
+    def _pular(self):
+        atualizacao.pular_versao(self.store.preferencias, self.info["tag"])
+        self._salvar_prefs()
+        self._fechar()
+
+    def _abrir_pagina(self):
+        webbrowser.open(self.info["url"])
+        self._fechar()
+
+    def _atualizar(self):
+        self.baixando = True
+        self.cancelar_flag = False
+        for b in (self.b_ok, self.b_depois, self.b_pular):
+            b.config(state="disabled")
+        self.b_cancelar = botao(self.f_botoes, "Cancelar download", lambda: setattr(self, "cancelar_flag", True))
+        self.b_cancelar.pack(side="left", padx=(8, 0))
+        self.barra.pack(fill="x", pady=(8, 0))
+        self.l_status.config(text="Baixando a atualização...", style="Muted.TLabel")
+
+        def trabalho():
+            try:
+                caminho = atualizacao.baixar(self.info["msi"], progresso=lambda f, t: self.fila.put(("p", (f, t))),
+                                             cancelar=lambda: self.cancelar_flag, sessao=self.sessao, repo=self.info.get("repo"))
+                self.fila.put(("ok", caminho))
+            except Cancelado:
+                self.fila.put(("cancelado", None))
+            except ErroAdge as e:
+                self.fila.put(("erro", str(e)))
+            except Exception as e:
+                self.fila.put(("erro", f"Erro inesperado: {e}"))
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def _fim_download(self):
+        self.baixando = False
+        self.barra.pack_forget()
+        self.b_cancelar.destroy()
+        for b in (self.b_ok, self.b_depois, self.b_pular):
+            b.config(state="normal")
+
+    def _ler_fila(self):
+        try:
+            while True:
+                tipo, dado = self.fila.get_nowait()
+                if tipo == "p":
+                    feito, total = dado
+                    if total:
+                        self.barra.config(value=feito * 100 / total)
+                        self.l_status.config(text=f"Baixando a atualização... {feito / 1048576:.1f} de {total / 1048576:.1f} MB")
+                elif tipo == "ok":
+                    self.l_status.config(text="Download conferido. Iniciando a instalação...")
+                    self.update_idletasks()
+                    try:
+                        self.ao_instalar(dado)
+                    except ErroAdge as e:
+                        self._fim_download()
+                        self.l_status.config(text=str(e), style="Erro.TLabel")
+                    return
+                elif tipo == "erro":
+                    self._fim_download()
+                    self.l_status.config(text=dado, style="Erro.TLabel")
+                elif tipo == "cancelado":
+                    self._fim_download()
+                    self.l_status.config(text="Download cancelado.", style="Muted.TLabel")
+        except queue.Empty:
+            pass
+        if self.winfo_exists():
+            self.after(100, self._ler_fila)
+
+    def _fechar(self):
+        if self.baixando:
+            self.cancelar_flag = True
+        self.destroy()
+
+
 # ============================================================================= janela principal
 class App(tk.Tk):
     def __init__(self, store: Armazenamento = None):
@@ -671,8 +810,11 @@ class App(tk.Tk):
         self._aba_empresas()
         self._aba_config()
         self._atualizar_lista()
-        if self.store.preferencias.get("verificar_atualizacao", True):
-            threading.Thread(target=self._checar_atualizacao, daemon=True).start()
+        self.fila_att: "queue.Queue" = queue.Queue()
+        self.sessao_att = None  # os testes injetam uma sessão falsa
+        self.after(300, self._ler_fila_att)
+        if self.store.preferencias.get("verificar_atualizacao", True) and atualizacao.deve_checar(self.store.preferencias):
+            self._checar_atualizacao()
 
     # ------------------------------------------------------------------ início
     def _desbloquear(self):
@@ -698,6 +840,8 @@ class App(tk.Tk):
         self.faixa = tk.Frame(self, bg="#FFF6D6")
         self.l_faixa = tk.Label(self.faixa, text="", bg="#FFF6D6", fg="#7A5B00", cursor="hand2", font=FONTE)
         self.l_faixa.pack(padx=12, pady=6)
+        self.info_att = None
+        self.l_faixa.bind("<Button-1>", lambda *_: self._abrir_dialogo_att())
 
     # ------------------------------------------------------------------ aba Empresas
     def _aba_empresas(self):
@@ -809,7 +953,7 @@ class App(tk.Tk):
                         variable=self.v_att, command=self._salvar_att).pack(anchor="w")
         lin2 = ttk.Frame(aba)
         lin2.pack(anchor="w", pady=(6, 0))
-        botao(lin2, "Verificar agora", lambda: threading.Thread(target=self._checar_atualizacao, args=(True,), daemon=True).start()).pack(side="left")
+        botao(lin2, "Verificar agora", lambda: self._checar_atualizacao(manual=True)).pack(side="left")
         self.l_att = ttk.Label(lin2, text="", style="Muted.TLabel")
         self.l_att.pack(side="left", padx=10)
 
@@ -860,23 +1004,56 @@ class App(tk.Tk):
         self.store.salvar()
 
     def _checar_atualizacao(self, manual=False):
-        from . import atualizacao
+        """Consulta em segundo plano; o resultado volta pela fila (a janela só mexe na tela no fio principal)."""
+        if manual:
+            self.l_att.config(text="Verificando...")
+
+        def trabalho():
+            try:
+                info = atualizacao.consultar(sessao=self.sessao_att)
+                self.fila_att.put(("info", (info, manual)))
+            except Exception:
+                self.fila_att.put(("falha", manual))
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def _ler_fila_att(self):
+        self.after(300, self._ler_fila_att)
         try:
-            r = atualizacao.versao_nova()
-        except Exception:
-            r = None
-            if manual:
-                self.after(0, lambda: self.l_att.config(text="Não consegui verificar agora."))
-                return
-        if r:
-            tag, url = r
-            def mostrar():
-                self.l_faixa.config(text=f"Versão {tag} disponível. Clique para baixar.")
-                self.l_faixa.bind("<Button-1>", lambda *_: webbrowser.open(url))
-                self.faixa.pack(fill="x", after=self.winfo_children()[0])
-            self.after(0, mostrar)
-        elif manual:
-            self.after(0, lambda: self.l_att.config(text="Você já está na versão mais recente."))
+            while True:
+                tipo, dado = self.fila_att.get_nowait()
+                if tipo == "falha":
+                    if dado:
+                        self.l_att.config(text="Não consegui verificar agora. Confira a internet.")
+                    continue
+                info, manual = dado
+                if not manual:
+                    atualizacao.marcar_checagem(self.store.preferencias)
+                    try:
+                        self.store.salvar()
+                    except OSError:
+                        pass
+                if not info:
+                    if manual:
+                        self.l_att.config(text=f"Você já está na versão mais recente (v{VERSAO}).")
+                    continue
+                self.info_att = info
+                if manual:
+                    self.l_att.config(text=f"Versão {info['tag']} disponível.")
+                    self._abrir_dialogo_att()
+                elif atualizacao.deve_avisar(info, self.store.preferencias):
+                    self.l_faixa.config(text=f"Versão {info['tag']} disponível. Clique para atualizar.")
+                    self.faixa.pack(fill="x", after=self.winfo_children()[0])
+                    self._abrir_dialogo_att()
+        except queue.Empty:
+            pass
+
+    def _abrir_dialogo_att(self):
+        if not self.info_att:
+            return
+        d = DialogoAtualizacao(self, self.store, self.info_att, sessao=self.sessao_att)
+        self.wait_window(d)
+        if not atualizacao.deve_avisar(self.info_att, self.store.preferencias):
+            self.faixa.pack_forget()
 
 
 def main():

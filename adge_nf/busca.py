@@ -76,7 +76,7 @@ class DialogoBusca(Modal):
         self.resizable(True, True)
         self._montar()
         tela_h = self.winfo_screenheight()
-        self.geometry(f"{px(1080)}x{min(px(860), tela_h - px(90))}")
+        self.geometry(f"{px(1080)}x{min(px(920), tela_h - px(90))}")
         self.minsize(px(900), px(560))
         self.protocol("WM_DELETE_WINDOW", self._fechar)
         self.bind("<Escape>", lambda *_: self._fechar())
@@ -139,14 +139,6 @@ class DialogoBusca(Modal):
         rotulo(dir_, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 4))
         self.seg_acao = Segmentado(dir_, [("ambos", "Total e XMLs"), ("calcular", "Só o total"), ("baixar", "Só os XMLs")], self.v_acao)
         self.seg_acao.pack(anchor="w")
-        self.f_nfe = tk.Frame(dir_, bg=P.superficie)
-        if self.emp.get("nfe"):
-            self.f_nfe.pack(anchor="w", fill="x", pady=(12, 0))
-            rotulo(self.f_nfe, "NF-e na SEFAZ", 11, "bold", "verde_escuro").pack(anchor="w")
-            self.l_nfe_timer = rotulo(self.f_nfe, "", 10, "bold", "verde_escuro", largura=px(430))
-            self.l_nfe_timer.pack(anchor="w", pady=(2, 0))
-            self.l_nfe_info = rotulo(self.f_nfe, "", 9, cor="suave", largura=px(430))
-            self.l_nfe_info.pack(anchor="w")
         self._atualizar_meses()
 
         st = tk.Frame(self, bg=P.fundo)
@@ -154,6 +146,11 @@ class DialogoBusca(Modal):
         self.l_status = rotulo(st, "", 10, cor="suave")
         self.l_status.pack(side="left")
         self.b_cancelar = Botao(st, "Cancelar busca", self._cancelar_busca, pady=4)
+        # contador da SEFAZ numa linha só, ao lado do status: não rouba altura da lista de notas
+        self.l_nfe_timer = rotulo(st, "", 10, "bold", "verde_escuro")
+        self.l_nfe_info = self.l_nfe_timer
+        if self.emp.get("nfe"):
+            self.l_nfe_timer.pack(side="right")
         self.barra = ui.Barra(self)
 
         self.f_res = tk.Frame(self, bg=P.fundo)
@@ -284,13 +281,13 @@ class DialogoBusca(Modal):
             return
         if self.emp.get("nfe"):
             h = self._historico()
-            resto = h.bloqueio_restante()
-            if resto is None:
-                self.l_nfe_timer.config(text="Consulta de NF-e liberada.", fg=ui._cor("verde_escuro"))
+            ciencia = "ciência automática" if self.emp.get("nfe_ciencia") else "sem ciência"
+            if h.bloqueio_restante() is None:
+                self.l_nfe_timer.config(text=f"NF-e: consulta liberada na SEFAZ ({ciencia}).", fg=ui._cor("verde_escuro"))
             else:
-                self.l_nfe_timer.config(text=h.texto_bloqueio(), fg=ui._cor("aviso_texto"))
-            ciencia = "Ciência da Operação: automática." if self.emp.get("nfe_ciencia") else "Ciência da Operação: desligada (notas de compra sem ciência chegam só em resumo)."
-            self.l_nfe_info.config(text=("O limite de consultas é da própria SEFAZ, não do sistema da Adge. " if resto else "") + ciencia)
+                resto = h.texto_bloqueio().replace("Consulta de NF-e bloqueada pela SEFAZ", "NF-e: bloqueada pela SEFAZ")
+                self.l_nfe_timer.config(text=resto.rstrip(".") + ". Limite da SEFAZ, não da Adge.",
+                                        fg=ui._cor("aviso_texto"))
         self.after(1000, self._tic_nfe)
 
     # ------------------------------------------------------------------ busca
@@ -375,16 +372,13 @@ class DialogoBusca(Modal):
                 ctx["consultou"] = True
                 if r["situacao"] == "bloqueado":
                     ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
-                                       + (f": {r['mensagem']}" if r.get("mensagem") else "") + "). "
-                                       + h.texto_bloqueio() + " Os resultados usam o histórico guardado.")
+                                       + (f": {r['mensagem']}" if r.get("mensagem") else "") + "). Os resultados usam o histórico guardado.")
                 if emp.get("nfe_ciencia"):
                     self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar)
             except (Cancelado,):
                 raise
             except ErroAdge as e:
                 ctx["msgs"].append(f"NF-e não consultada: {e} Os resultados usam o histórico guardado, se houver.")
-        elif h.bloqueado():
-            ctx["msgs"].append("NF-e: " + h.texto_bloqueio() + " Os resultados usam o histórico guardado no computador.")
         ctx["docs"] = h.carregar_docs()
         if not ctx["docs"] and not ctx["msgs"]:
             ctx["msgs"].append("Nenhuma NF-e guardada para esta empresa ainda.")
@@ -576,6 +570,7 @@ class DialogoBusca(Modal):
         if "nfe_resumo" in self.cats:
             dicas.append("NF-e sem ciência só têm o resumo (sem CFOP nem itens): se marcadas, entram como compra pelo valor total, sem crédito.")
         self.l_marcas_dica.config(text="  ".join(dicas))
+        (self.l_marcas_dica.pack if dicas else self.l_marcas_dica.pack_forget)(**({"anchor": "w"} if dicas else {}))
 
     def _mudou_selecao(self):
         """Qualquer mudança nas marcas refaz cartões, tabela e botões; a janela de informações avançadas escuta a mesma seleção."""
@@ -625,6 +620,10 @@ class DialogoBusca(Modal):
         if not any(a["cat"] in self.sel.ativos for a in r["arquivos"]):
             msgs.insert(0, "Nenhuma nota encontrada nesse período." if not r["arquivos"] else "Nenhuma categoria marcada: marque o que quer considerar.")
         self.l_aviso.config(text="\n".join(msgs))
+        if msgs:
+            self.l_aviso.pack(anchor="w", pady=(8, 0), after=self.f_bloco)
+        else:
+            self.l_aviso.pack_forget()
 
     def _atualizar_botoes(self):
         r = self.resultado

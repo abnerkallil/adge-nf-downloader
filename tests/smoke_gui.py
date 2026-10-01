@@ -10,17 +10,18 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from adge_nf import app as A  # noqa: E402
-from adge_nf import core  # noqa: E402
+from adge_nf import busca as B  # noqa: E402
+from adge_nf import core, dialogos as D, ui  # noqa: E402
 from adge_nf.store import Armazenamento  # noqa: E402
 from fixtures import SessaoFalsa, item, xml_nfse  # noqa: E402
 
 CNPJ = "11222333000181"
 mensagens = []
-A.messagebox.showerror = lambda *a, **k: mensagens.append(("erro", a))
-A.messagebox.showwarning = lambda *a, **k: mensagens.append(("aviso", a))
-A.messagebox.askyesno = lambda *a, **k: (mensagens.append(("pergunta", a)) or True)
-A.abrir_pasta = lambda *_: None
-A.messagebox.showinfo = lambda *a, **k: mensagens.append(("info", a))
+ui.erro = lambda *a, **k: mensagens.append(("erro", a))
+ui.avisar = lambda *a, **k: mensagens.append(("aviso", a))
+ui.perguntar = lambda *a, **k: (mensagens.append(("pergunta", a)) or True)
+ui.informar = lambda *a, **k: mensagens.append(("info", a))
+ui.abrir_pasta = lambda *_: None
 
 
 class CofreFalso:
@@ -59,7 +60,7 @@ def principal():
 
         # --- cadastro de empresa
         core.ler_certificado = lambda *_: {"cnpj": CNPJ, "nome": "EMPRESA TESTE", "valido_ate": __import__("datetime").date(2099, 1, 1)}
-        d = A.DialogoEmpresa(app, store)
+        d = D.DialogoEmpresa(app, store)
         d.update()
         d.v_pfx.set(str(pfx)); d.v_senha.set("segredo"); d._validar()
         assert d.v_cnpj.get() == "11.222.333/0001-81", d.v_cnpj.get()
@@ -69,8 +70,9 @@ def principal():
         assert d.salvou, d.l_erro.cget("text")
         assert "segredo" not in (t / "dados" / "empresas.json").read_text(encoding="utf-8")
         app._atualizar_lista(d.emp["id"])
-        assert len(app.tv.get_children()) == 1
-        passo("cadastro de empresa salva e lista atualiza")
+        assert len(app._cartoes) == 1 and app.selecionada_id == d.emp["id"]
+        assert store.empresas[0]["cert_validade"] == "2099-01-01"
+        passo("cadastro de empresa salva e lista de cartões atualiza")
 
         # --- busca
         emp = store.empresas[0]
@@ -80,12 +82,15 @@ def principal():
             item(2, xml_nfse("2" * 50, valor="250.50", dh="2026-09-30T10:00:00-03:00", num="2", **eu)),
             item(3, xml_nfse("3" * 50, valor="80.00", dh="2026-09-02T10:00:00-03:00", num="3", toma_cnpj=CNPJ, toma_nome="EMPRESA TESTE")),
         ])])
-        b = A.DialogoBusca(app, store, emp, sessao=sessao)
+        b = B.DialogoBusca(app, store, emp, sessao=sessao)
         b.update()
         assert b.v_mes.get() in core.MESES_TELA
         assert b.ano == __import__("datetime").date.today().year
-        b.v_mes.set("Setembro"); b.ano = 2026; b._atualizar_periodo()
-        assert b.l_periodo.cget("text") == "01/09/2026 a 30/09/2026", b.l_periodo.cget("text")
+        b._escolher_mes(8); b.ano = 2026; b._atualizar_meses()
+        assert "01/09/2026 a 30/09/2026" in b.l_periodo.cget("text") and b.v_mes.get() == "Setembro", b.l_periodo.cget("text")
+        assert b.b_meses[8].cget("text") == "Set"
+        b._mudar_ano(-1); assert b.ano == 2025; b._mudar_ano(1)
+        b._ir_mes_anterior(); b._ir_este_mes(); b._escolher_mes(8); b.ano = 2026; b._atualizar_meses()
         b._buscar()
         assert esperar(lambda: b.resultado is not None, app), f"busca não terminou: {mensagens}"
         r = b.resultado
@@ -95,22 +100,40 @@ def principal():
         passo("busca mostra faturamento e lista de notas")
         # saldo líquido (prestado − tomado): verde se positivo; totais e botões no mesmo bloco
         assert b.l_saldo_v.cget("text") == "R$ 1.170,50", b.l_saldo_v.cget("text")
-        assert str(b.c_saldo.cget("bg")).upper() == "#E3F5E9"
+        assert b.c_saldo.fundo.upper() == "#E3F5E9"
         assert b.c_saldo.winfo_ismapped()
         assert b.b_copiar.master is b.f_acoes_totais and b.b_avancado.master is b.f_acoes_totais
         assert b.f_acoes_totais.master is b.f_bloco and b.b_copiar.winfo_ismapped()
+        assert len(b.cards_pos.winfo_children()) == 3
         assert "Saldo líquido" in b._texto_totais() and "1.170,50" in b._texto_totais()
         neg = SessaoFalsa([(0, [
             item(1, xml_nfse("4" * 50, valor="100.00", dh="2026-09-03T10:00:00-03:00", num="4", **eu)),
             item(2, xml_nfse("5" * 50, valor="500.00", dh="2026-09-04T10:00:00-03:00", num="5", toma_cnpj=CNPJ, toma_nome="EMPRESA TESTE")),
         ])])
-        bn = A.DialogoBusca(app, store, emp, sessao=neg)
-        bn.v_mes.set("Setembro"); bn.ano = 2026; bn._atualizar_periodo(); bn._buscar()
+        bn = B.DialogoBusca(app, store, emp, sessao=neg)
+        bn._escolher_mes(8); bn.ano = 2026; bn._atualizar_meses(); bn._buscar()
         assert esperar(lambda: bn.resultado is not None, app)
         assert bn.l_saldo_v.cget("text") == "-R$ 400,00", bn.l_saldo_v.cget("text")
-        assert str(bn.c_saldo.cget("bg")).upper() == "#FDE7E7" and str(bn.l_saldo_v.cget("fg")).upper() == "#C0392B"
+        assert bn.c_saldo.fundo.upper() == "#FDE7E7" and str(bn.l_saldo_v.cget("fg")).upper() == "#C0392B"
         bn.destroy()
         passo("saldo líquido muda de cor (positivo/negativo)")
+
+        # filtros, ordenação e detalhe da nota
+        b.v_filtro.set("tomado"); b._preencher_tabela()
+        assert len(b.tv.get_children()) == 1
+        b.v_filtro.set("prestado"); b._preencher_tabela()
+        assert len(b.tv.get_children()) == 2
+        b.v_filtro.set("todas"); b.v_texto.set("250,50"); b.update()
+        assert len(b.tv.get_children()) == 1, b.tv.get_children()
+        b.v_texto.set("")
+        b._ordenar("valor"); primeira = b.tv.item(b.tv.get_children()[0], "values")[4]
+        assert primeira == "R$ 80,00", primeira
+        b._ordenar("valor"); assert b.tv.item(b.tv.get_children()[0], "values")[4] == "R$ 1.000,00"
+        b.tv.selection_set(b.tv.get_children()[0]); b.update()
+        assert "Nota" in b.l_detalhe.cget("text") and "Valor" in b.l_detalhe.cget("text"), b.l_detalhe.cget("text")
+        passo("filtros, ordenação e detalhe da nota")
+        h = store.preferencias["historico"]
+        assert len(h) == 1 and h[0]["mes"] == 9 and abs(h[0]["prestado"] - 100) < 0.001 and abs(h[0]["tomado"] - 500) < 0.001, h  # a 2ª busca (mesmo mês) substitui a 1ª
 
         b._copiar()
         assert "1.250,50" in app.clipboard_get()
@@ -120,7 +143,7 @@ def principal():
             openpyxl = None
         if openpyxl:
             alvo = t / "export.xlsx"
-            A.filedialog.asksaveasfilename = lambda **k: str(alvo)
+            B.filedialog.asksaveasfilename = lambda **k: str(alvo)
             b._exportar_planilha()
             wbk = openpyxl.load_workbook(alvo)
             assert wbk.sheetnames == ["Geral", "Prestado", "Tomado", "Canceladas"], wbk.sheetnames
@@ -134,8 +157,8 @@ def principal():
 
         # --- só calcular não exige destino
         emp2 = dict(emp, acao="calcular", destino="")
-        b2 = A.DialogoBusca(app, store, emp2, sessao=sessao)
-        b2.v_mes.set("Setembro"); b2.ano = 2026
+        b2 = B.DialogoBusca(app, store, emp2, sessao=sessao)
+        b2._escolher_mes(8); b2.ano = 2026; b2._atualizar_meses()
         b2._buscar()
         assert esperar(lambda: b2.resultado is not None, app)
         assert not b2.b_gravar.winfo_ismapped()
@@ -155,7 +178,7 @@ def principal():
         av._clicar(0)
         assert "R$" in av.l_detalhe.cget("text")
         # sem dados fiscais: pede para informar
-        assert any("Informar dados fiscais" in str(w.cget("text")) for w in av.f_comp.winfo_children() if w.winfo_class() == "TButton")
+        assert any("Informar dados fiscais" in str(w.cget("text")) for w in av.f_comp.winfo_children() if isinstance(w, ui.Botao))
         d = AV.DialogoDadosFiscais(av, store, av.emp)
         d.v_rbt.set("360.000,00"); d.v_folha.set("120.000,00"); d.v_regime.set("Lucro Presumido"); d.v_iss.set("5")
         d._salvar()
@@ -182,15 +205,15 @@ def principal():
         # --- pasta fora do padrão Adge: não trava, deixa escolher outra pasta
         (t / "cliente_sem_padrao").mkdir()
         emp3 = dict(emp, estrutura="adge", destino=str(t / "cliente_sem_padrao"))
-        b3 = A.DialogoBusca(app, store, emp3, sessao=sessao)
-        b3.v_mes.set("Setembro"); b3.ano = 2026
+        b3 = B.DialogoBusca(app, store, emp3, sessao=sessao)
+        b3._escolher_mes(8); b3.ano = 2026; b3._atualizar_meses()
         b3._buscar()
         assert esperar(lambda: b3.resultado is not None, app)
         assert str(b3.b_gravar.cget("state")) == "disabled"
         assert "Escolher pasta" in b3.l_destino.cget("text"), b3.l_destino.cget("text")
         assert b3.b_pasta.winfo_ismapped()
         (t / "livre").mkdir()
-        A.filedialog.askdirectory = lambda **k: str(t / "livre")
+        B.filedialog.askdirectory = lambda **k: str(t / "livre")
         b3._escolher_pasta()
         assert str(b3.b_gravar.cget("state")) == "normal"
         b3._gravar()
@@ -202,7 +225,7 @@ def principal():
         class Ruim:
             def get(self, *a, **k):
                 return type("R", (), {"status_code": 403, "json": lambda s: {}})()
-        b3 = A.DialogoBusca(app, store, emp, sessao=Ruim())
+        b3 = B.DialogoBusca(app, store, emp, sessao=Ruim())
         b3._buscar()
         assert esperar(lambda: any(m[0] == "erro" for m in mensagens), app)
         assert not b3.trabalhando
@@ -296,22 +319,74 @@ def principal():
         d.destroy()
         passo("aviso de atualização lista as novidades por item e versão")
 
-        # --- boas-vindas: só na primeira abertura; Configurações permite rever
+        # --- boas-vindas: só na primeira abertura; "Sobre" permite rever
         assert A.boas_vindas_pendente({}) and not A.boas_vindas_pendente({"boas_vindas_vista": True})
         store.preferencias.pop("boas_vindas_vista")
         abertos_url = []
-        import webbrowser
-        webbrowser.open = lambda u, *a, **k: abertos_url.append(u)
+        ui.abrir_link = lambda u: abertos_url.append(u)
         d = A.DialogoBoasVindas(app, store)
         d.update()
-        todo = " ".join(w.cget("text") for w in d.winfo_children() if hasattr(w, "cget") and "text" in w.keys())
-        assert "sem fins lucrativos" in todo and "Avaliar no GitHub" in [b.cget("text") for b in (d.b_github, d.b_google, d.b_site)]
+        assert "sem fins lucrativos" in " ".join(t for _, t in A.TEXTOS_MISSAO)
+        assert [b.cget("text") for b in (d.b_github, d.b_google, d.b_site)] == ["Avaliar no GitHub", "Avaliar no Google", "Conhecer a Adge"]
         d.b_github.invoke(); d.b_google.invoke()
         assert any("github.com" in u for u in abertos_url) and any("share.google/d9zzh3PZHLl5LCvF2" in u for u in abertos_url), abertos_url
+        assert d.b_primeira is None  # já existe empresa cadastrada
         d.b_ok.invoke()
         assert store.preferencias["boas_vindas_vista"] is True and not A.boas_vindas_pendente(store.preferencias)
+        app._ir("sobre"); app.update()
         assert app.b_apresentacao.cget("text") == "Ver a apresentação do projeto"
-        passo("boas-vindas aparece uma vez e Configurações permite rever")
+        # primeira abertura sem empresas: oferece cadastrar a primeira
+        vazio = Armazenamento(t / "dados2", keyring_mod=CofreFalso())
+        chamou = []
+        d = A.DialogoBoasVindas(app, vazio, ao_adicionar=lambda: chamou.append(1))
+        d.update()
+        assert d.b_primeira is not None
+        d.b_primeira.invoke()
+        assert chamou and vazio.preferencias["boas_vindas_vista"] is True
+        passo("boas-vindas aparece uma vez, oferece a primeira empresa e Sobre permite rever")
+
+        # --- histórico, tema escuro e validade do certificado
+        app._ir("historico"); app.update()
+        assert len(app.rol_hist.corpo.winfo_children()) == 1
+        abertas = []
+        orig_busca = A.DialogoBusca
+        def fabrica_busca(pai, st, e, periodo=None, auto=False):
+            abertas.append((periodo, auto))
+            dlg = orig_busca(pai, st, e, sessao=sessao, periodo=periodo, auto=auto)
+            def fim():
+                if dlg.winfo_exists():
+                    dlg.destroy() if dlg.resultado else dlg.after(100, fim)
+            dlg.after(200, fim)
+            return dlg
+        A.DialogoBusca = fabrica_busca
+        app._abrir_historico(store.preferencias["historico"][0])
+        assert abertas == [((2026, 9), True)], abertas
+        A.DialogoBusca = orig_busca
+        n = len(mensagens)
+        app._abrir_historico({"empresa_id": "nao-existe", "ano": 2026, "mes": 1})
+        assert mensagens[-1][0] == "aviso" and len(mensagens) == n + 1
+        app._limpar_historico()
+        assert store.preferencias["historico"] == []
+        passo("histórico lista, reabre a consulta e limpa")
+
+        assert A.situacao_certificado("2099-01-01")[1] == "verde"
+        assert A.situacao_certificado("2000-01-01")[1] == "vermelho"
+        assert A.situacao_certificado((__import__("datetime").date.today() + __import__("datetime").timedelta(days=10)).isoformat())[1] == "amarelo"
+        assert A.situacao_certificado(None) is None
+        store.empresas[0].pop("cert_validade", None); store.empresas[0].pop("cert_checado", None)
+        app._atualizar_validades()
+        assert esperar(lambda: store.empresas[0].get("cert_validade") == "2099-01-01", app, 6), store.empresas[0]
+        passo("validade do certificado é atualizada em segundo plano")
+
+        app._ir("config"); app.update()
+        app.v_escuro.set(True); app._alternar_tema()
+        assert esperar(lambda: ui.P.nome == "escuro" and app.pagina == "config" and str(app.lateral.cget("bg")).upper() == "#0A3822", app), ui.P.nome
+        assert store.preferencias["tema"] == "escuro"
+        app._ir("empresas"); app.update()
+        app.v_escuro.set(False) if hasattr(app, "v_escuro") else None
+        app._ir("config"); app.v_escuro.set(False); app._alternar_tema()
+        assert esperar(lambda: ui.P.nome == "claro" and app.pagina == "config", app)
+        passo("modo escuro liga, desliga e guarda a preferência")
 
         # --- configurações
         store.trocar_modo("mestra123")
@@ -319,7 +394,7 @@ def principal():
         assert "senha mestra" in app.l_seg.cget("text").lower()
         passo("configurações")
         # a aba de configurações tem rolagem e botão de apagar dados
-        assert any(isinstance(w, A.AbaRolavel) for w in app.abas.winfo_children())
+        assert any(isinstance(w, ui.Rolavel) for w in app.paginas["config"].winfo_children())
         app._apagar_dados()
         assert store.empresas == [] and not (t / "dados" / "empresas.json").exists()
         passo("apagar todos os dados")  # o app fecha sozinho depois de apagar

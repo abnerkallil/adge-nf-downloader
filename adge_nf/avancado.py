@@ -1,12 +1,12 @@
 """Janela "Informações avançadas": gráfico de pizza do período e comparativo de regimes tributários (simulação)."""
 import math
 import tkinter as tk
-import webbrowser
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from . import NOME_APP, SITE_ADGE, core, grafico, regimes
-from .app import BORDA, BRANCO, CINZA, ERRO, TEXTO, VERDE, VERDE_CLARO, VERDE_ESC, AbaRolavel, Modal, botao, centralizar
+from . import ui
 from .core import ErroAdge
+from .ui import P, Botao, Cartao, Chip, Interruptor, Modal, Rolavel, F, px, rotulo
 
 AVISO_LEGAL = ("Simulação estimada, feita com as notas do período e os dados informados. Não considera retenções, benefícios, "
                "créditos reais, RAT/terceiros nem a tributação de lucros e dividendos, e não substitui a análise de um contador. "
@@ -28,10 +28,9 @@ class DialogoConfirmaFiscal(Modal):
     def __init__(self, pai, fiscal: dict):
         super().__init__(pai, "Dados usados na análise")
         self.resultado = None
-        ttk.Label(self, text="Confirme os dados da empresa", style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(self, style="Muted.TLabel", wraplength=420, justify="left",
-                  text="A análise usa estas informações, que ficaram salvas neste computador. Se algo mudou, edite antes de continuar."
-                  ).pack(anchor="w", pady=(2, 10))
+        ui.titulo(self, "Confirme os dados da empresa",
+                  "A análise usa estas informações, que ficaram salvas neste computador. Se algo mudou, edite antes de continuar."
+                  ).pack(anchor="w", pady=(0, 12))
         f = {**regimes.fiscal_padrao(), **fiscal}
         linhas = [("Regime atual", regimes.NOMES.get(f["regime"], "—")),
                   ("Receita bruta dos últimos 12 meses", "R$ " + num_br(f["rbt12"])),
@@ -41,17 +40,18 @@ class DialogoConfirmaFiscal(Modal):
                   ("Presunção (Lucro Presumido)", f"{f['presuncao']}%"),
                   ("Outras despesas mensais", "R$ " + num_br(f["outras_despesas"])),
                   ("Profissão regulamentada (reforma)", "Sim" if f["profissao_regulamentada"] else "Não")]
-        quadro = ttk.Frame(self, style="Card.TFrame", padding=12)
-        quadro.pack(fill="x")
+        cartao = Cartao(self, fundo="verde_claro", borda="verde_claro")
+        cartao.pack(fill="x")
+        q = cartao.corpo
+        q.columnconfigure(1, weight=1)
         for i, (k, v) in enumerate(linhas):
-            ttk.Label(quadro, text=k, style="Card.TLabel").grid(row=i, column=0, sticky="w", pady=2)
-            ttk.Label(quadro, text=v, style="Card.TLabel", font=("Segoe UI Semibold", 10)).grid(row=i, column=1, sticky="e", padx=(24, 0))
-        quadro.columnconfigure(1, weight=1)
-        lin = ttk.Frame(self)
-        lin.pack(fill="x", pady=(14, 0))
-        botao(lin, "Agora não", self.destroy).pack(side="right")
-        botao(lin, "Editar dados", lambda: self._fim("editar")).pack(side="right", padx=(0, 8))
-        botao(lin, "Usar estes dados", lambda: self._fim("usar"), primario=True).pack(side="right", padx=(0, 8))
+            rotulo(q, k, 10, cor="verde_escuro").grid(row=i, column=0, sticky="w", pady=3)
+            rotulo(q, v, 10, "bold", "verde_escuro", anchor="e").grid(row=i, column=1, sticky="e", padx=(28, 0))
+        lin = tk.Frame(self, bg=P.fundo)
+        lin.pack(fill="x", pady=(16, 0))
+        Botao(lin, "Agora não", self.destroy).pack(side="right")
+        Botao(lin, "Editar dados", lambda: self._fim("editar")).pack(side="right", padx=(0, 8))
+        Botao(lin, "Usar estes dados", lambda: self._fim("usar"), estilo="primario").pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda *_: self.destroy())
         self.mostrar()
 
@@ -65,13 +65,13 @@ class DialogoDadosFiscais(Modal):
         super().__init__(pai, "Dados fiscais da empresa")
         self.store, self.emp, self.salvou = store, emp, False
         f = {**regimes.fiscal_padrao(), **(emp.get("fiscal") or {})}
-        ttk.Label(self, text="Dados fiscais da empresa", style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(self, style="Muted.TLabel", wraplength=480, justify="left",
-                  text="Usados só para a simulação de regimes. Ficam salvos neste computador, junto com a empresa, "
-                       "e a busca de notas continua de onde parou."
-                  ).pack(anchor="w", pady=(2, 10))
-        g = ttk.Frame(self)
-        g.pack(fill="x")
+        ui.titulo(self, "Dados fiscais da empresa",
+                  "Usados só para a simulação de regimes. Ficam salvos neste computador, junto com a empresa, "
+                  "e a busca de notas continua de onde parou.").pack(anchor="w", pady=(0, 12))
+        cartao = Cartao(self)
+        cartao.pack(fill="x")
+        g = cartao.corpo
+        g.columnconfigure(1, weight=1)
         self.v_regime = tk.StringVar(value=regimes.NOMES.get(f["regime"], regimes.NOMES["simples"]))
         self.v_rbt = tk.StringVar(value=num_br(f["rbt12"]) if f["rbt12"] else "")
         self.v_folha = tk.StringVar(value=num_br(f["folha12"]) if f["folha12"] else "")
@@ -82,29 +82,30 @@ class DialogoDadosFiscais(Modal):
         self.v_outras = tk.StringVar(value=num_br(f["outras_despesas"]) if f["outras_despesas"] else "")
         self.v_prof = tk.BooleanVar(value=f["profissao_regulamentada"])
 
-        def linha(r, rotulo, widget, dica=""):
-            ttk.Label(g, text=rotulo).grid(row=r, column=0, sticky="w", pady=4, padx=(0, 12))
-            widget.grid(row=r, column=1, sticky="w", pady=4)
+        def linha(r, texto, widget, dica=""):
+            rotulo(g, texto, 10).grid(row=r, column=0, sticky="w", pady=5, padx=(0, 16))
+            widget.grid(row=r, column=1, sticky="w", pady=5)
             if dica:
-                ttk.Label(g, text=dica, style="Muted.TLabel").grid(row=r, column=2, sticky="w", padx=(8, 0))
+                rotulo(g, dica, 9, cor="suave").grid(row=r, column=2, sticky="w", padx=(10, 0))
 
-        cb = ttk.Combobox(g, textvariable=self.v_regime, values=list(regimes.NOMES.values()), state="readonly", width=22)
-        linha(0, "Regime atual", cb)
-        linha(1, "Receita bruta dos últimos 12 meses (R$)", ttk.Entry(g, textvariable=self.v_rbt, width=24), "obrigatório")
-        linha(2, "Folha de pagamento dos últimos 12 meses (R$)", ttk.Entry(g, textvariable=self.v_folha, width=24), "salários + pró-labore")
-        linha(3, "Simples: anexo", ttk.Combobox(g, textvariable=self.v_anexo, values=["III", "IV", "V"], state="readonly", width=6))
-        linha(4, "", ttk.Checkbutton(g, text="Atividade sujeita ao Fator R (III ou V, conforme a folha)", variable=self.v_fator))
-        linha(5, "ISS do município (%)", ttk.Entry(g, textvariable=self.v_iss, width=8), "entre 2% e 5%")
+        linha(0, "Regime atual", ttk.Combobox(g, textvariable=self.v_regime, values=list(regimes.NOMES.values()),
+                                              state="readonly", width=22, font=F(10)))
+        linha(1, "Receita bruta dos últimos 12 meses (R$)", ui.Campo(g, self.v_rbt, largura=18), "obrigatório")
+        linha(2, "Folha de pagamento dos últimos 12 meses (R$)", ui.Campo(g, self.v_folha, largura=18), "salários + pró-labore")
+        linha(3, "Simples: anexo", ttk.Combobox(g, textvariable=self.v_anexo, values=["III", "IV", "V"], state="readonly",
+                                                width=6, font=F(10)))
+        linha(4, "", Interruptor(g, "Atividade sujeita ao Fator R (III ou V, conforme a folha)", self.v_fator))
+        linha(5, "ISS do município (%)", ui.Campo(g, self.v_iss, largura=8), "entre 2% e 5%")
         linha(6, "Presunção do Lucro Presumido", ttk.Combobox(g, textvariable=self.v_presuncao, values=["32%", "16%", "8%"],
-                                                              state="readonly", width=6), "32% serviços em geral")
-        linha(7, "Outras despesas mensais (R$)", ttk.Entry(g, textvariable=self.v_outras, width=24), "para o Lucro Real")
-        linha(8, "", ttk.Checkbutton(g, text="Profissão regulamentada (redução de 30% na reforma)", variable=self.v_prof))
-        self.l_erro = ttk.Label(self, text="", style="Erro.TLabel", wraplength=480, justify="left")
-        self.l_erro.pack(anchor="w", pady=(6, 0))
-        lin = ttk.Frame(self)
-        lin.pack(fill="x", pady=(10, 0))
-        botao(lin, "Cancelar", self.destroy).pack(side="right")
-        botao(lin, "Salvar e continuar", self._salvar, primario=True).pack(side="right", padx=(0, 8))
+                                                              state="readonly", width=6, font=F(10)), "32% serviços em geral")
+        linha(7, "Outras despesas mensais (R$)", ui.Campo(g, self.v_outras, largura=18), "para o Lucro Real")
+        linha(8, "", Interruptor(g, "Profissão regulamentada (redução de 30% na reforma)", self.v_prof))
+        self.l_erro = rotulo(self, "", 10, cor="erro", largura=px(560))
+        self.l_erro.pack(anchor="w", pady=(8, 0))
+        lin = tk.Frame(self, bg=P.fundo)
+        lin.pack(fill="x", pady=(8, 0))
+        Botao(lin, "Cancelar", self.destroy).pack(side="right")
+        Botao(lin, "Salvar e continuar", self._salvar, estilo="primario").pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda *_: self.destroy())
         self.mostrar()
 
@@ -141,12 +142,11 @@ class DialogoDadosFiscais(Modal):
 # ============================================================================= janela principal
 class DialogoAvancado(Modal):
     def __init__(self, pai, store, emp: dict, resultado: dict):
-        super().__init__(pai, f"Informações avançadas — {emp['nome']}")
+        super().__init__(pai, f"Informações avançadas — {emp['nome']}", margem=0)
         self.store, self.emp, self.r = store, emp, resultado
-        self.configure(padx=0, pady=0)
         self.resizable(True, True)
-        self.geometry("1040x800")
-        self.minsize(900, 600)
+        self.geometry(f"{px(1040)}x{px(800)}")
+        self.minsize(px(900), px(600))
         self.faturamento = resultado["resumo"].get("servico_prestado", {}).get("valor", 0.0)
         self.tomados = resultado["resumo"].get("servico_tomado", {}).get("valor", 0.0)
         arqs = resultado["arquivos"]
@@ -156,13 +156,13 @@ class DialogoAvancado(Modal):
         self.v_filtro = tk.StringVar(value="ambos" if all(self.tem.values()) else ("prestado" if self.tem["prestado"] else "tomado"))
         self.destaque = None
         self.itens = []
-        self.rolagem = AbaRolavel(self)
+        self.rolagem = Rolavel(self, pad=24)
         self.rolagem.pack(fill="both", expand=True)
         self.corpo = self.rolagem.corpo
         self._topo()
         self._grafico()
-        self.f_comp = ttk.Frame(self.corpo)
-        self.f_comp.pack(fill="x", pady=(18, 0))
+        self.f_comp = tk.Frame(self.corpo, bg=P.fundo)
+        self.f_comp.pack(fill="x", pady=(20, 0))
         self._rodape()
         self._atualizar_grafico()
         self._render_comparativo()
@@ -172,48 +172,48 @@ class DialogoAvancado(Modal):
 
     # ------------------------------------------------------------------ partes
     def _topo(self):
-        ttk.Label(self.corpo, text="Informações avançadas", style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(self.corpo, style="Muted.TLabel",
-                  text=f"{self.emp['nome']} · {core.mes_exibicao(self.r['mes'])}/{self.r['ano']} · "
-                       f"{len(self.r['arquivos'])} nota(s) consideradas").pack(anchor="w", pady=(0, 10))
+        ui.titulo(self.corpo, "Informações avançadas",
+                  f"{self.emp['nome']} · {core.mes_exibicao(self.r['mes'])}/{self.r['ano']} · "
+                  f"{len(self.r['arquivos'])} nota(s) consideradas").pack(anchor="w", pady=(0, 12))
 
     def _grafico(self):
-        ttk.Label(self.corpo, text="Para onde vai o dinheiro e de onde ele vem", style="Sec.TLabel").pack(anchor="w", pady=(0, 6))
-        area = ttk.Frame(self.corpo)
-        area.pack(fill="x")
-        esq = ttk.Frame(area)
+        ui.secao(self.corpo, "Para onde vai o dinheiro e de onde ele vem").pack(anchor="w", pady=(0, 8))
+        cartao = Cartao(self.corpo)
+        cartao.pack(fill="x")
+        area = cartao.corpo
+        esq = tk.Frame(area, bg=P.superficie)
         esq.pack(side="left", anchor="n")
-        self.tela = tk.Canvas(esq, width=360, height=360, bg=BRANCO, highlightthickness=0)
+        self.tam = px(340)
+        self.tela = tk.Canvas(esq, width=self.tam, height=self.tam, bg=P.superficie, highlightthickness=0)
         self.tela.pack()
-        self.l_detalhe = ttk.Label(esq, text="Passe o mouse ou clique em uma fatia.", style="Muted.TLabel", wraplength=340,
-                                   justify="center")
+        self.l_detalhe = rotulo(esq, "Passe o mouse ou clique em uma fatia.", 10, cor="suave", largura=px(330), justify="center",
+                                anchor="center")
         self.l_detalhe.pack(pady=(4, 0))
-        dir_ = ttk.Frame(area, padding=(24, 0, 0, 0))
-        dir_.pack(side="left", fill="both", expand=True, anchor="n")
-        ttk.Label(dir_, text="Ver por", style="Sec.TLabel").pack(anchor="w")
+        dir_ = tk.Frame(area, bg=P.superficie)
+        dir_.pack(side="left", fill="both", expand=True, anchor="n", padx=(24, 0))
+        rotulo(dir_, "Ver por", 11, "bold", "verde_escuro").pack(anchor="w")
         for k, nome in grafico.MODOS.items():
-            ttk.Radiobutton(dir_, text=nome, value=k, variable=self.v_modo, command=self._mudou).pack(anchor="w", pady=1)
-        ttk.Label(dir_, text="Notas", style="Sec.TLabel").pack(anchor="w", pady=(10, 0))
+            ui.radio(dir_, nome, k, self.v_modo, self._mudou).pack(anchor="w", pady=1)
+        rotulo(dir_, "Notas", 11, "bold", "verde_escuro").pack(anchor="w", pady=(10, 0))
         self.rb_filtro = {}
         for k, nome in grafico.FILTROS.items():
-            rb = ttk.Radiobutton(dir_, text=nome, value=k, variable=self.v_filtro, command=self._mudou)
+            rb = ui.radio(dir_, nome, k, self.v_filtro, self._mudou)
             rb.pack(anchor="w", pady=1)
             self.rb_filtro[k] = rb
             if (k == "ambos" and not all(self.tem.values())) or (k in self.tem and not self.tem[k]):
-                rb.state(["disabled"])
-        ttk.Label(dir_, text="Legenda", style="Sec.TLabel").pack(anchor="w", pady=(12, 2))
-        self.f_legenda = ttk.Frame(dir_)
+                rb.config(state="disabled")
+        rotulo(dir_, "Legenda", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 2))
+        self.f_legenda = tk.Frame(dir_, bg=P.superficie)
         self.f_legenda.pack(fill="x")
 
     def _rodape(self):
-        ttk.Separator(self.corpo).pack(fill="x", pady=(18, 10))
-        ttk.Label(self.corpo, text=AVISO_LEGAL, style="Muted.TLabel", wraplength=900, justify="left").pack(anchor="w")
-        cta = ttk.Frame(self.corpo, style="Card.TFrame", padding=(16, 12))
-        cta.pack(fill="x", pady=(12, 4))
-        ttk.Label(cta, text="Quer saber qual regime vale mais para a sua empresa?", style="Card.TLabel",
-                  font=("Segoe UI Semibold", 11)).pack(side="left")
-        botao(cta, "Fale com a Adge", lambda: webbrowser.open(SITE_ADGE), primario=True).pack(side="right")
-        ttk.Label(self.corpo, text=f"{NOME_APP} · {SITE_ADGE}", style="Muted.TLabel").pack(anchor="w", pady=(6, 10))
+        ui.divisor(self.corpo, (20, 12))
+        rotulo(self.corpo, AVISO_LEGAL, 9, cor="suave", largura=px(900)).pack(anchor="w")
+        cta = Cartao(self.corpo, fundo="verde_claro", borda="verde_claro", pad=14)
+        cta.pack(fill="x", pady=(14, 4))
+        rotulo(cta.corpo, "Quer saber qual regime vale mais para a sua empresa?", 11, "bold", "verde_escuro").pack(side="left")
+        Botao(cta.corpo, "Fale com a Adge", lambda: ui.abrir_link(SITE_ADGE), estilo="primario").pack(side="right")
+        rotulo(self.corpo, f"{NOME_APP} · {SITE_ADGE}", 9, cor="suave").pack(anchor="w", pady=(6, 10))
 
     # ------------------------------------------------------------------ gráfico
     def _mudou(self):
@@ -229,37 +229,38 @@ class DialogoAvancado(Modal):
     def _desenhar(self):
         t = self.tela
         t.delete("all")
-        cx = cy = 180
-        raio = 150
+        cx = cy = self.tam / 2
+        raio = self.tam * 0.43
         if not self.itens:
-            t.create_text(cx, cy, text="Sem notas para este filtro.", fill=CINZA, font=("Segoe UI", 11))
+            t.create_text(cx, cy, text="Sem notas para este filtro.", fill=P.suave, font=F(11))
             return
         angs = grafico.angulos(self.itens)
-        for i, ((rotulo, valor, p), (ini, ext)) in enumerate(zip(self.itens, angs)):
-            cor = grafico.cor_da_fatia(rotulo, i)
+        for i, ((rot, valor, p), (ini, ext)) in enumerate(zip(self.itens, angs)):
+            cor = grafico.cor_da_fatia(rot, i)
             meio = math.radians(ini + ext / 2)
-            off = 12 if self.destaque == i else 0
+            off = px(12) if self.destaque == i else 0
             dx, dy = math.cos(meio) * off, -math.sin(meio) * off
             caixa = (cx - raio + dx, cy - raio + dy, cx + raio + dx, cy + raio + dy)
             if len(self.itens) == 1:
-                item = t.create_oval(*caixa, fill=cor, outline=BRANCO, width=2)
+                item = t.create_oval(*caixa, fill=cor, outline=P.superficie, width=2)
             else:
-                item = t.create_arc(*caixa, start=ini, extent=ext, style="pieslice", fill=cor, outline=BRANCO, width=2)
+                item = t.create_arc(*caixa, start=ini, extent=ext, style="pieslice", fill=cor, outline=P.superficie, width=2)
             t.tag_bind(item, "<Enter>", lambda e, i=i: self._hover(i))
             t.tag_bind(item, "<Leave>", lambda e: self._hover(None))
             t.tag_bind(item, "<Button-1>", lambda e, i=i: self._clicar(i))
             if p >= 6:
                 tx, ty = cx + math.cos(meio) * raio * 0.68 + dx, cy - math.sin(meio) * raio * 0.68 + dy
-                texto = t.create_text(tx, ty, text=f"{p:.0f}%", fill=BRANCO, font=("Segoe UI Semibold", 11))
+                texto = t.create_text(tx, ty, text=f"{p:.0f}%", fill="#FFFFFF", font=F(11, "bold"))
                 t.tag_bind(texto, "<Button-1>", lambda e, i=i: self._clicar(i))
-        t.create_oval(cx - 62, cy - 62, cx + 62, cy + 62, fill=BRANCO, outline=BRANCO)
+        r2 = raio * 0.42
+        t.create_oval(cx - r2, cy - r2, cx + r2, cy + r2, fill=P.superficie, outline=P.superficie)
         total = sum(v for _, v, _ in self.itens)
-        t.create_text(cx, cy - 10, text="Total", fill=CINZA, font=("Segoe UI", 9))
-        t.create_text(cx, cy + 10, text="R$ " + num_br(total), fill=VERDE_ESC, font=("Segoe UI Semibold", 11))
+        t.create_text(cx, cy - px(10), text="Total", fill=P.suave, font=F(9))
+        t.create_text(cx, cy + px(10), text="R$ " + num_br(total), fill=P.verde_escuro, font=F(11, "bold"))
 
     def _texto_fatia(self, i):
-        rotulo, valor, p = self.itens[i]
-        return f"{rotulo}\nR$ {num_br(valor)} · {f'{p:.1f}'.replace('.', ',')}%"
+        rot, valor, p = self.itens[i]
+        return f"{rot}\nR$ {num_br(valor)} · {f'{p:.1f}'.replace('.', ',')}%"
 
     def _hover(self, i):
         if i is not None:
@@ -277,15 +278,16 @@ class DialogoAvancado(Modal):
     def _legenda(self):
         for w in self.f_legenda.winfo_children():
             w.destroy()
-        for i, (rotulo, valor, p) in enumerate(self.itens):
-            lin = tk.Frame(self.f_legenda, bg=BRANCO, cursor="hand2")
+        bg = P.superficie
+        for i, (rot, valor, p) in enumerate(self.itens):
+            lin = tk.Frame(self.f_legenda, bg=bg, cursor="hand2")
             lin.pack(fill="x", pady=2)
-            quad = tk.Label(lin, bg=grafico.cor_da_fatia(rotulo, i), width=2)
+            quad = tk.Label(lin, bg=grafico.cor_da_fatia(rot, i), width=2)
             quad.pack(side="left", padx=(0, 8))
-            tx = tk.Label(lin, text=rotulo, bg=BRANCO, fg=TEXTO, font=("Segoe UI", 10), anchor="w", justify="left", wraplength=300)
+            tx = tk.Label(lin, text=rot, bg=bg, fg=P.texto, font=F(10), anchor="w", justify="left", wraplength=px(300))
             tx.pack(side="left", fill="x", expand=True)
-            vl = tk.Label(lin, text=f"{f'{p:.1f}'.replace('.', ',')}%  ·  R$ {num_br(valor)}", bg=BRANCO, fg=CINZA,
-                          font=("Segoe UI", 9), anchor="e")
+            vl = tk.Label(lin, text=f"{f'{p:.1f}'.replace('.', ',')}%  ·  R$ {num_br(valor)}", bg=bg, fg=P.suave,
+                          font=F(9), anchor="e")
             vl.pack(side="right", padx=(8, 0))
             for w in (lin, quad, tx, vl):
                 w.bind("<Button-1>", lambda e, i=i: self._clicar(i))
@@ -314,28 +316,28 @@ class DialogoAvancado(Modal):
     def _render_comparativo(self):
         for w in self.f_comp.winfo_children():
             w.destroy()
-        ttk.Label(self.f_comp, text="Seu regime tributário no período", style="Sec.TLabel").pack(anchor="w", pady=(0, 6))
+        ui.secao(self.f_comp, "Seu regime tributário no período").pack(anchor="w", pady=(0, 8))
         f = self.emp.get("fiscal") or {}
         if not self.tem["prestado"]:
-            ttk.Label(self.f_comp, style="Muted.TLabel", wraplength=900, justify="left",
-                      text="Para comparar regimes é preciso ter o faturamento: busque também os serviços prestados.").pack(anchor="w")
+            rotulo(self.f_comp, "Para comparar regimes é preciso ter o faturamento: busque também os serviços prestados.",
+                   10, cor="suave", largura=px(900)).pack(anchor="w")
             return
         if not regimes.fiscal_completo(f):
-            ttk.Label(self.f_comp, style="Muted.TLabel", wraplength=900, justify="left",
-                      text="Informe os dados fiscais da empresa (regime atual, receita e folha dos últimos 12 meses) "
-                           "para ver quanto ela pagaria em cada regime.").pack(anchor="w")
-            botao(self.f_comp, "Informar dados fiscais", self._editar_dados, primario=True).pack(anchor="w", pady=(8, 0))
+            rotulo(self.f_comp, "Informe os dados fiscais da empresa (regime atual, receita e folha dos últimos 12 meses) "
+                                "para ver quanto ela pagaria em cada regime.", 10, cor="suave", largura=px(900)).pack(anchor="w")
+            Botao(self.f_comp, "Informar dados fiscais", self._editar_dados, estilo="primario").pack(anchor="w", pady=(10, 0))
             return
         res = regimes.comparar(self.faturamento, self.tomados, f)
         cen = {c["chave"]: c for c in res["cenarios"]}
         atual, melhor = cen[res["atual"]], cen.get(res["melhor"])
-        resumo = ttk.Frame(self.f_comp, style="Card.TFrame", padding=(16, 12))
+        resumo = Cartao(self.f_comp, fundo="verde_claro", borda="verde_claro")
         resumo.pack(fill="x")
-        ttk.Label(resumo, style="Card.TLabel", font=("Segoe UI Semibold", 11),
-                  text=f"Faturamento do período: R$ {num_br(self.faturamento)} · notas tomadas: R$ {num_br(self.tomados)}").pack(anchor="w")
+        c = resumo.corpo
+        rotulo(c, f"Faturamento do período: R$ {num_br(self.faturamento)} · notas tomadas: R$ {num_br(self.tomados)}",
+               11, "bold", "verde_escuro").pack(anchor="w")
         if atual["elegivel"]:
-            ttk.Label(resumo, style="Card.TLabel",
-                      text=f"Hoje, em {atual['nome']}: R$ {num_br(atual['total'])} ({pct(atual['efetiva'])} do faturamento).").pack(anchor="w", pady=(4, 0))
+            rotulo(c, f"Hoje, em {atual['nome']}: R$ {num_br(atual['total'])} ({pct(atual['efetiva'])} do faturamento).",
+                   10, cor="verde_escuro").pack(anchor="w", pady=(4, 0))
         if melhor and atual["elegivel"]:
             if melhor["chave"] == atual["chave"]:
                 msg = "Entre os regimes simulados, o seu atual é o mais econômico neste período."
@@ -343,47 +345,75 @@ class DialogoAvancado(Modal):
                 dif = atual["total"] - melhor["total"]
                 msg = (f"Mais econômico neste período: {melhor['nome']}, com R$ {num_br(melhor['total'])} "
                        f"(diferença de R$ {num_br(dif)} no mês, cerca de R$ {num_br(dif * 12)} por ano).")
-            ttk.Label(resumo, style="Card.TLabel", font=("Segoe UI Semibold", 10), text=msg, wraplength=880, justify="left").pack(anchor="w", pady=(4, 0))
+            rotulo(c, msg, 10, "bold", "verde_escuro", largura=px(860)).pack(anchor="w", pady=(4, 0))
         for a in res["avisos"]:
-            ttk.Label(self.f_comp, text="⚠ " + a, style="Erro.TLabel", wraplength=900, justify="left").pack(anchor="w", pady=(4, 0))
-        ttk.Label(self.f_comp, text="Hoje", style="Sec.TLabel").pack(anchor="w", pady=(12, 4))
-        linha1 = ttk.Frame(self.f_comp)
+            rotulo(self.f_comp, "⚠ " + a, 10, cor="erro", largura=px(900)).pack(anchor="w", pady=(6, 0))
+        self._barras(res, cen)
+        rotulo(self.f_comp, "Hoje", 12, "bold", "verde_escuro").pack(anchor="w", pady=(14, 6))
+        linha1 = tk.Frame(self.f_comp, bg=P.fundo)
         linha1.pack(fill="x")
         for i, ch in enumerate(("simples", "presumido", "real")):
             self._cartao(linha1, i, cen[ch], ch == res["atual"], ch == res["melhor"])
-        ttk.Label(self.f_comp, text="Reforma tributária (IBS e CBS) — simulação ilustrativa", style="Sec.TLabel").pack(anchor="w", pady=(14, 4))
-        linha2 = ttk.Frame(self.f_comp)
+        rotulo(self.f_comp, "Reforma tributária (IBS e CBS) — simulação ilustrativa", 12, "bold", "verde_escuro").pack(anchor="w", pady=(16, 6))
+        linha2 = tk.Frame(self.f_comp, bg=P.fundo)
         linha2.pack(fill="x")
         for i, ch in enumerate(("reforma2027", "reforma2033")):
             self._cartao(linha2, i, cen[ch], False, False)
-        botao(self.f_comp, "Editar dados fiscais", self._editar_dados).pack(anchor="w", pady=(12, 0))
+        Botao(self.f_comp, "Editar dados fiscais", self._editar_dados).pack(anchor="w", pady=(14, 0))
+
+    def _barras(self, res, cen):
+        """Barras horizontais com o total de cada regime elegível: dá para comparar de relance."""
+        elegiveis = [cen[k] for k in ("simples", "presumido", "real") if cen[k]["elegivel"]]
+        if len(elegiveis) < 2:
+            return
+        maior = max(c["total"] for c in elegiveis) or 1.0
+        cartao = Cartao(self.f_comp, pad=14)
+        cartao.pack(fill="x", pady=(10, 0))
+        g = cartao.corpo
+        g.columnconfigure(1, weight=1)
+        for i, c in enumerate(elegiveis):
+            melhor, atual = c["chave"] == res["melhor"], c["chave"] == res["atual"]
+            rotulo(g, c["nome"], 10, "bold" if atual else "normal").grid(row=i, column=0, sticky="w", pady=5, padx=(0, 14))
+            barra = tk.Canvas(g, height=px(16), bg=P.superficie, highlightthickness=0, bd=0)
+            barra.grid(row=i, column=1, sticky="ew", pady=5)
+
+            def desenhar(e=None, b=barra, c=c, melhor=melhor):
+                b.delete("all")
+                w = b.winfo_width()
+                if w < 4:
+                    return
+                h = px(16)
+                ui.arredondado(b, 0, 0, w, h, h / 2, fill=P.hover, outline=P.hover)
+                ui.arredondado(b, 0, 0, max(h, w * c["total"] / maior), h, h / 2,
+                               fill=P.verde if melhor else P.borda_forte, outline=P.verde if melhor else P.borda_forte)
+            barra.bind("<Configure>", desenhar)
+            rotulo(g, "R$ " + num_br(c["total"]), 10, "bold", anchor="e").grid(row=i, column=2, sticky="e", padx=(14, 0))
+            if melhor:
+                Chip(g, "Mais econômico", "verde").grid(row=i, column=3, padx=(10, 0))
 
     def _cartao(self, pai, col, c, atual, melhor):
         pai.columnconfigure(col, weight=1, uniform="cartao")
-        borda = VERDE if atual else BORDA
-        card = tk.Frame(pai, bg=BRANCO, highlightbackground=borda, highlightthickness=3 if atual else 1)
+        card = Cartao(pai, borda="verde" if atual else None, pad=14)
         card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 8, 0))
-        corpo = tk.Frame(card, bg=BRANCO, padx=12, pady=10)
-        corpo.pack(fill="both", expand=True)
-        tk.Label(corpo, text=c["nome"], bg=BRANCO, fg=VERDE_ESC, font=("Segoe UI Semibold", 11), anchor="w", justify="left",
-                 wraplength=250).pack(anchor="w")
-        tags = []
+        corpo = card.corpo
+        rotulo(corpo, c["nome"], 11, "bold", "verde_escuro", largura=px(250)).pack(anchor="w")
+        tags = tk.Frame(corpo, bg=P.superficie)
         if atual:
-            tags.append("Seu regime hoje")
+            Chip(tags, "Seu regime hoje", "verde").pack(side="left", padx=(0, 4))
         if melhor:
-            tags.append("Mais econômico")
-        if tags:
-            tk.Label(corpo, text=" · ".join(tags), bg=VERDE_CLARO, fg=VERDE_ESC, font=("Segoe UI Semibold", 9), padx=6).pack(anchor="w", pady=(3, 0))
+            Chip(tags, "Mais econômico", "azul").pack(side="left")
+        if atual or melhor:
+            tags.pack(anchor="w", pady=(4, 0))
         if not c["elegivel"]:
-            tk.Label(corpo, text=c["motivo"], bg=BRANCO, fg=CINZA, wraplength=250, justify="left", font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 0))
+            rotulo(corpo, c["motivo"], 9, cor="suave", largura=px(250)).pack(anchor="w", pady=(8, 0))
             return
-        tk.Label(corpo, text="R$ " + num_br(c["total"]), bg=BRANCO, fg=TEXTO, font=("Segoe UI Semibold", 18)).pack(anchor="w", pady=(6, 0))
-        tk.Label(corpo, text=f"{pct(c['efetiva'])} do faturamento", bg=BRANCO, fg=CINZA, font=("Segoe UI", 9)).pack(anchor="w")
-        tabela = tk.Frame(corpo, bg=BRANCO)
+        rotulo(corpo, "R$ " + num_br(c["total"]), 18, "bold").pack(anchor="w", pady=(6, 0))
+        rotulo(corpo, f"{pct(c['efetiva'])} do faturamento", 9, cor="suave").pack(anchor="w")
+        tabela = tk.Frame(corpo, bg=P.superficie)
         tabela.pack(fill="x", pady=(8, 0))
         for i, (nome, valor) in enumerate(c["itens"]):
-            tk.Label(tabela, text=nome, bg=BRANCO, fg=TEXTO, font=("Segoe UI", 9), anchor="w", justify="left", wraplength=170).grid(row=i, column=0, sticky="w", pady=1)
-            tk.Label(tabela, text="R$ " + num_br(valor), bg=BRANCO, fg=TEXTO, font=("Segoe UI", 9), anchor="e").grid(row=i, column=1, sticky="e", padx=(8, 0))
+            rotulo(tabela, nome, 9, largura=px(170)).grid(row=i, column=0, sticky="w", pady=1)
+            rotulo(tabela, "R$ " + num_br(valor), 9, anchor="e").grid(row=i, column=1, sticky="e", padx=(8, 0))
         tabela.columnconfigure(0, weight=1)
         for o in c.get("obs", []):
-            tk.Label(corpo, text="• " + o, bg=BRANCO, fg=CINZA, wraplength=250, justify="left", font=("Segoe UI", 8)).pack(anchor="w", pady=(4, 0))
+            rotulo(corpo, "• " + o, 8, cor="suave", largura=px(250)).pack(anchor="w", pady=(4, 0))

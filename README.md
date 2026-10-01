@@ -17,7 +17,9 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.
 - **Informações avançadas**: gráfico de pizza e comparativo entre Simples Nacional, Lucro Presumido, Lucro Real
   e cenários da reforma tributária (IBS/CBS).
-- Cadastro de várias empresas, com senhas protegidas no Cofre do Windows.
+- Cadastro de várias empresas em **cartões**, com senhas protegidas no Cofre do Windows e aviso de validade do certificado.
+- **Histórico** das últimas consultas, com reabertura em um clique.
+- Visual claro ou **modo escuro**, com menu lateral e telas que se ajustam ao tamanho da janela.
 - **Atualização dentro do programa**, com verificação de integridade do instalador.
 
 ## Instalação
@@ -30,16 +32,20 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 > fica para uma versão futura.
 
 ## Como usar
-1. Na aba **Empresas salvas**, clicar em **Adicionar empresa**.
+1. Na tela **Empresas**, clicar em **Adicionar empresa**.
 2. Escolher o arquivo do certificado (`.pfx` ou `.p12`) em **Procurar...**, informar a senha e clicar em
    **Validar certificado**. O CNPJ e o nome da empresa são preenchidos automaticamente, e a validade do certificado é exibida.
 3. Marcar o que será baixado (**Serviço prestado**, **Serviço tomado**) e a ação desejada: calcular o total,
    baixar os XMLs ou ambos.
 4. Em **Onde salvar os XMLs**, definir a pasta e a forma de organização, e salvar.
-5. Selecionar a empresa (ou dar duplo clique), escolher o **mês** na lista e clicar em **Buscar notas**.
-   O ano atual vem do relógio do computador; para outro ano, usar **Alterar ano** (formato AAAA).
-6. Conferir os totais e a lista de notas. Em seguida, **Baixar XMLs para a pasta** grava os arquivos,
-   **Exportar planilha** gera o Excel e **Copiar totais** leva o resumo para a área de transferência.
+5. No cartão da empresa, clicar em **Buscar notas** (ou dar duplo clique no cartão), escolher o **mês** na grade
+   (o ano muda com ‹ e ›; há atalhos para **Mês anterior** e **Este mês**) e clicar em **Buscar notas**.
+6. Conferir os totais e a lista de notas, que pode ser filtrada e ordenada. Em seguida, **Baixar XMLs para a pasta**
+   grava os arquivos, **Exportar planilha** gera o Excel e **Copiar totais** leva o resumo para a área de transferência.
+
+Atalhos: **Ctrl+N** adiciona uma empresa e **Enter** abre a busca da empresa selecionada. A tela **Histórico** guarda as
+últimas 30 consultas (somente os totais) e permite repeti-las com **Abrir de novo**. Em **Configurações** ficam o
+modo escuro, a senha mestra, as pastas e as atualizações; em **Sobre**, a apresentação do projeto e os links para avaliar.
 
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
 
@@ -123,7 +129,33 @@ ajudar contadores e auxiliares de contabilidade no dia a dia, sem que precisem p
 problemas de pequenas empresas de forma gratuita.
 
 Na primeira abertura, o programa mostra um cartão de boas-vindas com essa apresentação (ele pode ser revisto em
-**Configurações → Sobre**). Quem quiser contribuir pode deixar uma avaliação aqui no GitHub ou no perfil da Adge no Google.
+**Sobre**). Quem quiser contribuir pode deixar uma avaliação aqui no GitHub ou no perfil da Adge no Google.
+
+## Para desenvolvedores
+```
+pip install -r requirements-build.txt
+python -m unittest discover -s tests -p "test_*.py" -v   # núcleo, planilha, regimes, relatórios e armazenamento
+python tests/smoke_gui.py                                 # abre a janela e simula uma busca
+python adge_nf_downloader.pyw                             # executa o programa
+python setup.py bdist_msi                                 # gera o MSI (somente no Windows)
+```
+
+### Itens e relatórios de atualização
+Cada função do programa tem um código fixo (`ITEM-NN`), listado em `adge_nf/itens.py`. Cada versão tem um relatório em
+`docs/atualizacoes/vX.Y.Z.md` (veja `docs/atualizacoes/README.md` para o formato). A seção **Resumo** vira o texto do aviso de
+atualização do programa e o arquivo inteiro vira o texto da Release. Os testes conferem o formato e os códigos.
+
+### Publicar uma versão nova
+O MSI é gerado pelo GitHub Actions (`.github/workflows/build.yml`) sempre que uma tag `vX.Y.Z` é enviada ao repositório:
+1. Escrever o relatório `docs/atualizacoes/vX.Y.Z.md` (e registrar códigos novos em `adge_nf/itens.py`).
+2. Fazer o commit e criar a tag da versão (sempre `vX.Y.Z`, com o "v", e maior que a anterior).
+3. Enviar (push) o commit e a tag.
+4. O fluxo ajusta a versão pela tag, roda os testes, gera o `.msi` e o `.msi.sha256`, e anexa os dois à Release,
+   usando o relatório da versão como texto.
+5. Conferir se a nova Release está marcada como **Latest**, pois é ela que o atualizador consulta.
+
+O `REPO_GITHUB` em `adge_nf/__init__.py` aponta para o repositório consultado (vazio = sem verificação de versão).
+O `UpgradeCode` em `setup.py` nunca deve mudar: é ele que faz o instalador novo substituir o antigo.
 
 ## Licença
 MIT.

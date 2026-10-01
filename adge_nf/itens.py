@@ -27,6 +27,11 @@ CATALOGO = {
     "ITEM-18": "Novidades no aviso de atualização",
     "ITEM-19": "Boas-vindas da primeira abertura",
     "ITEM-20": "Janela principal e configurações",
+    "ITEM-21": "Histórico de consultas",
+    "ITEM-22": "Modo escuro",
+    "ITEM-23": "Validade do certificado",
+    "ITEM-24": "Sobre o projeto e contato com a Adge",
+    "ITEM-25": "Mensagens e janelas de aviso",
 }
 
 PADRAO = re.compile(r"^ITEM-\d{2,3}$")

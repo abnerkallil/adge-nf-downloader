@@ -20,15 +20,19 @@ class Simples(unittest.TestCase):
         self.assertAlmostEqual(regimes.aliquota_efetiva_simples("III", 360_000), 0.086, places=6)
         self.assertAlmostEqual(regimes.aliquota_efetiva_simples("III", 100_000), 0.06, places=6)
         self.assertAlmostEqual(regimes.aliquota_efetiva_simples("V", 360_000), 0.1675, places=6)
+        self.assertAlmostEqual(regimes.aliquota_efetiva_simples("I", 360_000), 0.073 - 5_940 / 360_000, places=6)
+        self.assertAlmostEqual(regimes.aliquota_efetiva_simples("II", 100_000), 0.045, places=6)
         self.assertIsNone(regimes.aliquota_efetiva_simples("III", 5_000_000))
 
     def test_repartição_soma_com_o_resto_do_das(self):
         for anexo, faixas in regimes.REPARTICAO.items():
             self.assertEqual(len(faixas), 6)
-            for pc, iss in faixas:
-                self.assertTrue(0 < pc < 0.3 and 0 <= iss < 0.5)
-        self.assertEqual(regimes.repartir("III", 100_000), (0.156, 0.335))
-        self.assertEqual(regimes.repartir("V", 4_000_000), (0.2, 0.0))
+            for pc, iss, icms in faixas:
+                self.assertTrue(0 < pc < 0.4 and 0 <= iss < 0.5 and 0 <= icms < 0.4)
+        self.assertEqual(regimes.repartir("III", 100_000), (0.156, 0.335, 0.0))
+        self.assertEqual(regimes.repartir("V", 4_000_000), (0.2, 0.0, 0.0))
+        self.assertEqual(regimes.repartir("I", 100_000), (0.155, 0.0, 0.34))       # comércio: PIS+Cofins 15,5%, ICMS 34%
+        self.assertEqual(regimes.repartir("II", 4_000_000), (0.255, 0.0, 0.0))     # indústria, 6ª faixa: ICMS fora do DAS
 
     def test_fator_r(self):
         f = {"fator_r": True, "folha12": 100_000}
@@ -209,6 +213,42 @@ class Grafico(unittest.TestCase):
         self.assertAlmostEqual(sum(x[2] for x in r), 100.0)
         ang = grafico.angulos(r)
         self.assertAlmostEqual(sum(e for _, e in ang), -360.0)
+
+
+class MercadoriasTest(unittest.TestCase):
+    """Comércio (Anexo I), indústria (Anexo II) e ICMS das NF-e entram na comparação."""
+
+    def fiscal(self, regime="simples"):
+        f = regimes.fiscal_padrao()
+        f.update(regime=regime, rbt12=600000.0, folha12=120000.0)
+        return f
+
+    def totais(self, rec, regime="simples", **kw):
+        r = regimes.comparar(sum(rec.values()), kw.pop("tomados", 3000.0), self.fiscal(regime), receitas=rec, **kw)
+        return {c["chave"]: round(c["total"], 2) for c in r["cenarios"]}
+
+    def test_das_por_anexo(self):
+        # 600 mil: 3ª faixa. Anexo I = 9,5% nominal, dedução 13.860: efetiva 7,19%
+        self.assertEqual(self.totais({"servicos": 0, "comercio": 10000.0, "industria": 0})["simples_das"], 719.0)
+        comercio = self.totais({"servicos": 0, "comercio": 10000.0, "industria": 0})["simples_das"]
+        industria = self.totais({"servicos": 0, "comercio": 0, "industria": 10000.0})["simples_das"]
+        servicos = self.totais({"servicos": 10000.0, "comercio": 0, "industria": 0})["simples_das"]
+        self.assertGreater(industria, comercio)
+        self.assertNotEqual(servicos, comercio)
+
+    def test_mistura_soma_as_partes(self):
+        metade = self.totais({"servicos": 5000.0, "comercio": 5000.0, "industria": 0})["simples_das"]
+        a = self.totais({"servicos": 10000.0, "comercio": 0, "industria": 0})["simples_das"]
+        b = self.totais({"servicos": 0, "comercio": 10000.0, "industria": 0})["simples_das"]
+        self.assertAlmostEqual(metade, (a + b) / 2, delta=1.0)
+
+    def test_presumido_usa_icms_das_nfe_e_presuncao_de_8(self):
+        sem = self.totais({"servicos": 0, "comercio": 10000.0, "industria": 0}, "presumido")
+        com = self.totais({"servicos": 0, "comercio": 10000.0, "industria": 0}, "presumido", icms={"debito": 1700.0, "credito": 600.0})
+        self.assertAlmostEqual(com["presumido_hoje"] - sem["presumido_hoje"], 1100.0, delta=0.01)
+        r = regimes.comparar(10000.0, 3000.0, self.fiscal("presumido"), receitas={"servicos": 0, "comercio": 10000.0, "industria": 0})
+        irpj = [v for n, v in r["cenarios"][0]["itens"] if n.startswith("IRPJ")][0]
+        self.assertEqual(irpj, 120.0)                                   # 10.000 x 8% x 15%
 
 
 if __name__ == "__main__":

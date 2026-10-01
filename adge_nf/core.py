@@ -22,9 +22,28 @@ def mes_exibicao(m: int) -> str:
 
 
 CATEGORIAS = {
-    "servico_prestado": {"prefixo": "NOTA FISCAL DE SERVIÇO PRESTADO", "relatorio": "Serviço Prestado"},
-    "servico_tomado": {"prefixo": "NOTA FISCAL DE SERVIÇO TOMADO", "relatorio": "Serviço Tomado"},
+    # lado: "receita" (entra no faturamento), "custo" (entra nas compras/tomados) ou "neutro"; sinal: +1 soma, -1 subtrai (devoluções)
+    "servico_prestado": {"prefixo": "NOTA FISCAL DE SERVIÇO PRESTADO", "relatorio": "Serviço Prestado", "rotulo": "NFS-e prestadas",
+                         "tipo": "Prestado", "lado": "receita", "sinal": 1, "grupo": "nfse", "padrao": True},
+    "servico_tomado": {"prefixo": "NOTA FISCAL DE SERVIÇO TOMADO", "relatorio": "Serviço Tomado", "rotulo": "NFS-e tomadas",
+                       "tipo": "Tomado", "lado": "custo", "sinal": 1, "grupo": "nfse", "padrao": True},
+    "nfe_saida": {"prefixo": "NOTA FISCAL ELETRÔNICA DE VENDA", "relatorio": "NF-e de Venda", "rotulo": "NF-e de venda",
+                  "tipo": "Venda", "lado": "receita", "sinal": 1, "grupo": "nfe", "padrao": True},
+    "nfe_entrada": {"prefixo": "NOTA FISCAL ELETRÔNICA DE COMPRA", "relatorio": "NF-e de Compra", "rotulo": "NF-e de compra",
+                    "tipo": "Compra", "lado": "custo", "sinal": 1, "grupo": "nfe", "padrao": True},
+    "nfe_devolucao_venda": {"prefixo": "NOTA FISCAL ELETRÔNICA DE DEVOLUÇÃO DE VENDA", "relatorio": "NF-e Devolução de Venda",
+                            "rotulo": "NF-e devolução de venda", "tipo": "Devol. venda", "lado": "receita", "sinal": -1,
+                            "grupo": "nfe", "padrao": True},
+    "nfe_devolucao_compra": {"prefixo": "NOTA FISCAL ELETRÔNICA DE DEVOLUÇÃO DE COMPRA", "relatorio": "NF-e Devolução de Compra",
+                             "rotulo": "NF-e devolução de compra", "tipo": "Devol. compra", "lado": "custo", "sinal": -1,
+                             "grupo": "nfe", "padrao": True},
+    "nfe_outras": {"prefixo": "NOTA FISCAL ELETRÔNICA DE OUTRAS OPERAÇÕES", "relatorio": "NF-e Outras Operações",
+                   "rotulo": "NF-e outras operações", "tipo": "Outras op.", "lado": "neutro", "sinal": 0, "grupo": "nfe",
+                   "padrao": False},
+    "nfe_resumo": {"prefixo": "RESUMO DE NOTA FISCAL ELETRÔNICA", "relatorio": "NF-e só com resumo", "rotulo": "NF-e sem ciência",
+                   "tipo": "Sem ciência", "lado": "custo", "sinal": 1, "grupo": "nfe", "padrao": False},
 }
+ORDEM_CATEGORIAS = list(CATEGORIAS)
 
 # Estruturas de pasta de destino
 ESTRUTURAS = {
@@ -446,9 +465,18 @@ def prefixos_da_empresa(emp: dict) -> dict:
                               ("servico_tomado", emp.get("prefixo_tomado", "").strip())) if v}
 
 
-def planejar(emp: dict, docs: list, cnpj: str, ano: int, mes: int, destino: Path = None, extras: dict = None):
+def planejar(emp: dict, docs: list, cnpj: str, ano: int, mes: int, destino: Path = None, extras: dict = None,
+             docs_nfe: list = None):
+    """Plano do período. `docs_nfe` (documentos de NF-e vindos do histórico/consulta) soma as NF-e ao mesmo resultado."""
     limite = limite_para_destino(destino) if destino else LIMITE_NOME
-    return montar_plano(docs, cnpj, ano, mes, tipos_da_empresa(emp), prefixos_da_empresa(emp), limite, extras)
+    arquivos, resumo, avisos = montar_plano(docs, cnpj, ano, mes, tipos_da_empresa(emp), prefixos_da_empresa(emp), limite, extras)
+    if docs_nfe is not None:
+        from . import nfe
+        a2, r2, av2 = nfe.montar_plano_nfe(docs_nfe, cnpj, ano, mes, limite, extras)
+        arquivos = sorted(arquivos + a2, key=lambda a: (a["doc"].get("emissao") or "", str(a["doc"].get("numero") or "")))
+        resumo.update(r2)
+        avisos = avisos + av2
+    return arquivos, resumo, avisos
 
 
 def nome_planilha(mes: int, ano: int) -> str:
@@ -456,25 +484,34 @@ def nome_planilha(mes: int, ano: int) -> str:
 
 
 def salvar_notas(emp: dict, arquivos: list, resumo: dict, cnpj: str, ano: int, mes: int, log=lambda *_: None,
-                 canceladas: list = None):
+                 canceladas: list = None, ativos=None):
     """Grava os XMLs (e relatório/planilha, se ligados). Devolve (pasta, contagem)."""
     destino, _ = resolver_destino(Path(emp["destino"]), emp.get("estrutura", "adge"), ano, mes, criar=True)
-    contagem, linhas = {}, []
+    contagem, linhas, so_resumo = {}, [], []
     for f in arquivos:
+        if f.get("sem_xml"):                              # NF-e só com resumo: não há XML para gravar
+            so_resumo.append(f)
+            continue
+        if ativos is not None and f["cat"] not in ativos:  # só os XMLs das categorias marcadas na tela
+            continue
         _, status = gravar(destino, f["nome"], f["xml"])
         contagem[status] = contagem.get(status, 0) + 1
         linhas.append(f"Sucesso - XML {CATEGORIAS[f['cat']]['relatorio']} - "
                       f"{formatar_valor(f['doc']['valor']).replace('R$', 'R$ ')} - {formatar_data(f['doc']['emissao'])} - {f['doc']['chave']}")
+    for f in so_resumo:
+        d = f["doc"]
+        linhas.append(f"Sem XML - NF-e só com resumo (sem ciência da operação) - {formatar_valor(d['valor']).replace('R$', 'R$ ')} - "
+                      f"{formatar_data(d['emissao'])} - {d['emitente_nome']} - {d['chave']}")
     empresa = next((f["doc"]["emitente_nome"] for f in arquivos if f["doc"]["emitente_doc"] == cnpj), emp.get("nome", ""))
-    if emp.get("relatorio", True) and arquivos:
+    if emp.get("relatorio", True) and (arquivos or so_resumo):
         gravar(destino, f"[Sucesso] Relatorio de Organizacao - {limpar_nome(empresa)[:30].strip()} - {mes_exibicao(mes)} de {ano}.txt",
                texto_relatorio(empresa, cnpj, mes, ano, linhas))
-    if emp.get("planilha", emp.get("csv", False)) and arquivos:
+    if emp.get("planilha", emp.get("csv", False)) and (arquivos or so_resumo):
         from . import planilha
         alvo = Path(destino) / nome_planilha(mes, ano)
         n = 2
         while alvo.exists():                              # não sobrescreve: "(2)", "(3)"...
             alvo = Path(destino) / f"Resumo Notas - {mes:02d}-{ano} ({n}).xlsx"
             n += 1
-        planilha.gerar_xlsx(alvo, empresa, ano, mes, arquivos, resumo, canceladas)
+        planilha.gerar_xlsx(alvo, empresa, ano, mes, arquivos, resumo, canceladas, ativos)
     return destino, contagem

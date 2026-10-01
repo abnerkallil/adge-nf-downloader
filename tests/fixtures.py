@@ -52,3 +52,79 @@ class SessaoFalsa:
 
 def item(nsu, xml, chave="k"):
     return {"NSU": nsu, "ChaveAcesso": chave, "TipoDocumento": "NFSE", "ArquivoXml": empacotar(xml)}
+
+
+# ----------------------------------------------------------------------------- NF-e (modelo 55) e SEFAZ falsa
+def chave_nfe(emit_cnpj="33333333000133", num=1, aamm="2609"):
+    c = f"41{aamm}{emit_cnpj}55001{int(num):09d}1123456780"
+    assert len(c) == 44, len(c)
+    return c
+
+
+def xml_nfe(emit_cnpj, dest_cnpj, itens=(("5102", 1000.0),), num=1, dh="2026-09-10T10:00:00-03:00", crt="3", icms=0.0,
+            nat="VENDA DE MERCADORIA", tp_nf="1", cstat="100", emit_nome="EMITENTE TESTE", dest_nome="DESTINATARIO TESTE"):
+    chave = chave_nfe(emit_cnpj, num, dh[2:4] + dh[5:7])
+    dets = "".join(f'<det nItem="{n}"><prod><cProd>{n}</cProd><xProd>PRODUTO {n}</xProd><NCM>12345678</NCM><CFOP>{cf}</CFOP>'
+                   f'<vProd>{v:.2f}</vProd></prod></det>' for n, (cf, v) in enumerate(itens, 1))
+    total = sum(v for _, v in itens)
+    return (f'<?xml version="1.0" encoding="UTF-8"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><NFe>'
+            f'<infNFe Id="NFe{chave}" versao="4.00"><ide><mod>55</mod><serie>1</serie><nNF>{num}</nNF><dhEmi>{dh}</dhEmi>'
+            f'<natOp>{nat}</natOp><tpNF>{tp_nf}</tpNF><finNFe>1</finNFe></ide>'
+            f'<emit><CNPJ>{emit_cnpj}</CNPJ><xNome>{emit_nome}</xNome><CRT>{crt}</CRT></emit>'
+            f'<dest><CNPJ>{dest_cnpj}</CNPJ><xNome>{dest_nome}</xNome></dest>{dets}'
+            f'<total><ICMSTot><vProd>{total:.2f}</vProd><vICMS>{icms:.2f}</vICMS><vNF>{total:.2f}</vNF></ICMSTot></total></infNFe>'
+            f'</NFe><protNFe><infProt><chNFe>{chave}</chNFe><nProt>1</nProt><cStat>{cstat}</cStat></infProt></protNFe></nfeProc>')
+
+
+def xml_resnfe(emit_cnpj, valor=500.0, num=1, dh="2026-09-12T10:00:00-03:00", emit_nome="FORNECEDOR RESUMO", sit="1"):
+    return (f'<resNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><chNFe>{chave_nfe(emit_cnpj, num, dh[2:4] + dh[5:7])}</chNFe>'
+            f'<CNPJ>{emit_cnpj}</CNPJ><xNome>{emit_nome}</xNome><IE>1</IE><dhEmi>{dh}</dhEmi><tpNF>1</tpNF><vNF>{valor:.2f}</vNF>'
+            f'<digVal>x</digVal><dhRecbto>{dh}</dhRecbto><nProt>1</nProt><cSitNFe>{sit}</cSitNFe></resNFe>')
+
+
+def xml_evento(chave, tp="110111"):
+    return (f'<procEventoNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><evento versao="1.00"><infEvento>'
+            f'<chNFe>{chave}</chNFe><tpEvento>{tp}</tpEvento></infEvento></evento></procEventoNFe>')
+
+
+SCHEMAS_NFE = {"proc": "procNFe_v4.00.xsd", "res": "resNFe_v1.01.xsd", "evento": "procEventoNFe_v1.00.xsd"}
+
+
+def doc_nfe(nsu, xml, tipo="proc"):
+    return {"nsu": nsu, "tipo": tipo, "schema": SCHEMAS_NFE[tipo], "xml": xml}
+
+
+def soap_dist(cstat, docs=(), ult=0, maxi=0, motivo="ok"):
+    """Resposta SOAP da distribuição: docs = [(nsu, schema, xml)]."""
+    zips = "".join(f'<docZip NSU="{n:015d}" schema="{s}">{empacotar(x)}</docZip>' for n, s, x in docs)
+    lote = f"<loteDistDFeInt>{zips}</loteDistDFeInt>" if zips else ""
+    return (f'<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body><nfeDistDFeInteresseResponse '
+            f'xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"><nfeDistDFeInteresseResult>'
+            f'<retDistDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><tpAmb>1</tpAmb><verAplic>1</verAplic>'
+            f'<cStat>{cstat}</cStat><xMotivo>{motivo}</xMotivo><ultNSU>{ult:015d}</ultNSU><maxNSU>{maxi:015d}</maxNSU>{lote}'
+            f'</retDistDFeInt></nfeDistDFeInteresseResult></nfeDistDFeInteresseResponse></soap:Body></soap:Envelope>')
+
+
+def soap_evento(resultados, lote="128"):
+    """resultados: {chave: cStat}."""
+    rets = "".join(f'<retEvento versao="1.00"><infEvento><cStat>{c}</cStat><xMotivo>m</xMotivo><chNFe>{k}</chNFe></infEvento></retEvento>'
+                   for k, c in resultados.items())
+    return (f'<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body><nfeResultMsg>'
+            f'<retEnvEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>1</idLote><cStat>{lote}</cStat>'
+            f'<xMotivo>Lote processado</xMotivo>{rets}</retEnvEvento></nfeResultMsg></soap:Body></soap:Envelope>')
+
+
+class RespSoap:
+    def __init__(self, texto, code=200):
+        self.content, self.status_code = texto.encode("utf-8"), code
+
+
+class SessaoSefazFalsa:
+    """Responde, em ordem, as respostas SOAP combinadas; guarda o que foi enviado. Sem resposta sobrando, responde 137."""
+
+    def __init__(self, respostas=()):
+        self.respostas, self.enviados = list(respostas), []
+
+    def post(self, url, data=None, headers=None, timeout=0):
+        self.enviados.append((url, data.decode("utf-8"), headers))
+        return RespSoap(self.respostas.pop(0) if self.respostas else soap_dist("137", motivo="Nenhum documento localizado"))

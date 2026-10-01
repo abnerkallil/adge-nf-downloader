@@ -96,7 +96,7 @@ def principal():
         r = b.resultado
         assert abs(r["resumo"]["servico_prestado"]["valor"] - 1250.50) < 0.001
         assert len(b.tv.get_children()) == 3
-        assert "1.250,50" in b.cards["prestado"][1].cget("text"), b.cards["prestado"][1].cget("text")
+        assert "1.250,50" in b.cards["fat"][1].cget("text"), b.cards["prestado"][1].cget("text")
         passo("busca mostra faturamento e lista de notas")
         # saldo líquido (prestado − tomado): verde se positivo; totais e botões no mesmo bloco
         assert b.l_saldo_v.cget("text") == "R$ 1.170,50", b.l_saldo_v.cget("text")
@@ -119,9 +119,9 @@ def principal():
         passo("saldo líquido muda de cor (positivo/negativo)")
 
         # filtros, ordenação e detalhe da nota
-        b.v_filtro.set("tomado"); b._preencher_tabela()
+        b.v_filtro.set("custo"); b._preencher_tabela()
         assert len(b.tv.get_children()) == 1
-        b.v_filtro.set("prestado"); b._preencher_tabela()
+        b.v_filtro.set("receita"); b._preencher_tabela()
         assert len(b.tv.get_children()) == 2
         b.v_filtro.set("todas"); b.v_texto.set("250,50"); b.update()
         assert len(b.tv.get_children()) == 1, b.tv.get_children()
@@ -221,6 +221,90 @@ def principal():
         assert len(list((t / "livre").iterdir())) == 4, list((t / "livre").iterdir())
         b3.destroy()
         passo("pasta fora do padrão Adge permite escolher outra pasta")
+
+        # --- NF-e: busca junto com a NFS-e, checkmarks, contador da SEFAZ e histórico
+        import tkinter as tk
+        from adge_nf import nfe as NFE
+        from adge_nf import nfe_cache
+        from fixtures import (SessaoSefazFalsa, chave_nfe, soap_dist, xml_nfe, xml_resnfe)
+        OUTRO, CLI = "33333333000133", "44444444000144"
+
+        class Fecha(tk.Toplevel):
+            """Substitui as janelas modais: guarda a resposta combinada e fecha na hora."""
+            resposta = None
+            def __init__(self, pai, *a, **k):
+                super().__init__(pai)
+                self.resultado = type(self).resposta
+                self.after(50, self.destroy)
+
+        class ManterFalso(Fecha):
+            resposta = None                                   # fechou sem responder
+        class UsarFalso(Fecha):
+            resposta = "usar"
+        B.DialogoManterHistorico, B.DialogoUsarHistorico = ManterFalso, UsarFalso
+        hist_base = t / "hist"
+        sefaz = SessaoSefazFalsa([soap_dist("138", [
+            (1, "procNFe_v4.00.xsd", xml_nfe(CNPJ, CLI, [("5102", 2000.0)], num=1, icms=340.0)),
+            (2, "procNFe_v4.00.xsd", xml_nfe(OUTRO, CNPJ, [("5102", 600.0)], num=2, icms=100.0)),
+            (3, "procNFe_v4.00.xsd", xml_nfe(CNPJ, CLI, [("5949", 70.0)], num=3)),
+            (4, "resNFe_v1.01.xsd", xml_resnfe(OUTRO, 250.0, num=9))], 4, 4)])
+        emp_n = dict(emp, nfe=True, nfe_ciencia=False)
+        bn = B.DialogoBusca(app, store, emp_n, sessao=sessao, sessao_nfe=sefaz, base_historico=str(hist_base))
+        bn._escolher_mes(8); bn.ano = 2026; bn._atualizar_meses(); bn._buscar()
+        assert esperar(lambda: bn.resultado is not None, app), f"busca com NF-e não terminou: {mensagens}"
+        assert len(sefaz.enviados) == 1 and "210210" not in sefaz.enviados[0][1]      # sem ciência: só leu
+        assert bn.cards["fat"][1].cget("text") == "R$ 3.250,50", bn.cards["fat"][1].cget("text")
+        assert bn.cards["comp"][1].cget("text") == "R$ 680,00", bn.cards["comp"][1].cget("text")
+        assert bn.l_saldo_v.cget("text") == "R$ 2.570,50", bn.l_saldo_v.cget("text")
+        assert {"nfe_saida", "nfe_entrada", "nfe_outras", "nfe_resumo"} <= set(bn.marcas), set(bn.marcas)
+        assert not bn.sel.ativa("nfe_resumo") and not bn.sel.ativa("nfe_outras") and bn.sel.ativa("nfe_saida")
+        assert bn.cards["fat"][4].cget("text") == "Faturamento"
+        passo("NF-e junto com a NFS-e: cartões somam e notas sem ciência/outras operações começam fora")
+
+        # as marcas mudam cartões, tabela e planilha; resumo conta como compra pelo valor total
+        n_antes = len(bn.tv.get_children())
+        bn.sel.definir("nfe_resumo", True)
+        assert bn.cards["comp"][1].cget("text") == "R$ 930,00", bn.cards["comp"][1].cget("text")
+        assert len(bn.tv.get_children()) == n_antes + 1
+        bn.sel.definir("nfe_outras", True)
+        assert bn.cards["comp"][1].cget("text") == "R$ 930,00"                       # outras operações não somam
+        bn.sel.definir("nfe_saida", False)
+        assert bn.cards["fat"][1].cget("text") == "R$ 1.250,50"
+        assert "NF-e sem ciência" in bn._texto_totais() or "Considerado" in bn._texto_totais()
+        linhas = bn.tv.get_children()
+        assert any("semciencia" in bn.tv.item(i, "tags") for i in linhas)
+        bn.sel.definir("nfe_saida", True); bn.sel.definir("nfe_resumo", False); bn.sel.definir("nfe_outras", False)
+        assert bn.cards["fat"][1].cget("text") == "R$ 3.250,50"
+        passo("checkmarks atualizam cartões, tabela e texto copiado")
+
+        # informações avançadas escutam a mesma seleção
+        bn._avancado()
+        av = [w for w in bn.winfo_toplevel().winfo_children() if isinstance(w, AV.DialogoAvancado)][0]
+        av.update()
+        assert abs(sum(v for _, v, _ in av.itens) - 3250.50 - 680.0) < 0.01 or abs(sum(v for _, v, _ in av.itens) - 3930.5) < 0.01, av.itens
+        bn.sel.definir("nfe_entrada", False); bn.sel.definir("servico_tomado", False)
+        av.update()
+        assert abs(sum(v for _, v, _ in av.itens) - 3250.50) < 0.01, av.itens
+        av.marcas["nfe_entrada"].set(True); av.sel.definir("nfe_entrada", True)
+        assert bn.sel.ativa("nfe_entrada") and bn.marcas["nfe_entrada"].get()
+        av.v_modo.set("servico"); av._mudou()
+        assert any(x[0].startswith("CFOP 5.102") for x in av.itens), av.itens
+        av.destroy()
+        bn.sel.definir("servico_tomado", True)
+        passo("informações avançadas usam a mesma seleção e mostram CFOP")
+
+        # contador da SEFAZ: depois da consulta aparece o bloqueio e a próxima busca usa o histórico guardado
+        h = nfe_cache.HistoricoNFe(emp_n, base=str(hist_base))
+        assert h.bloqueado() and h.quantidade() == 4 and h.estado["decisao"] == "pendente", h.estado
+        bn.update(); bn._tic_nfe()
+        assert "bloqueada pela SEFAZ" in bn.l_nfe_timer.cget("text"), bn.l_nfe_timer.cget("text")
+        bn.resultado = None
+        bn._buscar()                                                                   # histórico "pendente": pergunta e usa o guardado
+        assert esperar(lambda: bn.resultado is not None, app)
+        assert len(sefaz.enviados) == 1, "não deveria consultar a SEFAZ enquanto bloqueada/usando histórico"
+        assert bn.cards["fat"][1].cget("text") == "R$ 3.250,50"
+        bn.destroy()
+        passo("contador de bloqueio e uso do histórico guardado")
 
         # --- erro do ADN aparece sem travar
         class Ruim:

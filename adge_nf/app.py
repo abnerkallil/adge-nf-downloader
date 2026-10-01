@@ -11,6 +11,7 @@ from tkinter import filedialog
 from . import NOME_APP, SITE_ADGE, URL_GITHUB, URL_GOOGLE_ADGE, VERSAO, atualizacao, core
 from . import ui
 from .busca import DialogoBusca
+from .nfe_cache import HistoricoNFe
 from .core import ErroAdge
 from .dialogos import (PREF_BOAS_VINDAS, TEXTOS_MISSAO, DialogoAtualizacao, DialogoBoasVindas, DialogoEmpresa,  # noqa: F401
                        boas_vindas_pendente)
@@ -236,7 +237,16 @@ class App(tk.Tk):
         for chave, nome, tom in (("prestado", "Prestado", "verde"), ("tomado", "Tomado", "vermelho")):
             if e["tipos"].get(chave):
                 Chip(chips, nome, tom).pack(side="left", padx=(0, 5))
+        if e.get("nfe"):
+            Chip(chips, "NF-e", "azul").pack(side="left", padx=(0, 5))
         Chip(chips, ACOES.get(e["acao"], e["acao"]), "neutro").pack(side="left")
+        if e.get("nfe"):
+            try:
+                texto = HistoricoNFe(e).texto_bloqueio()
+            except OSError:
+                texto = ""
+            if texto and not texto.endswith("liberada."):
+                Chip(k, "NF-e: consulta bloqueada pela SEFAZ", "amarelo").pack(anchor="w", pady=(6, 0))
         sel = situacao_certificado(e.get("cert_validade"))
         if sel:
             Chip(k, sel[0], sel[1]).pack(anchor="w", pady=(6, 0))

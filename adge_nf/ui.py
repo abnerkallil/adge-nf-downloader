@@ -438,6 +438,72 @@ class Chip(tk.Canvas):
         return self._texto if chave == "text" else super().cget(chave)
 
 
+def fluxo(frame, widgets, hgap=6, vgap=6):
+    """Dispõe os widgets em linhas que quebram sozinhas conforme a largura de `frame` (como texto que desce de linha)."""
+    def refluir(e=None):
+        if not frame.winfo_exists():
+            return
+        largura = frame.winfo_width()
+        if largura < 50:
+            return
+        for w in widgets:
+            w.grid_forget()
+        x = linha = coluna = 0
+        for w in widgets:
+            lw = w.winfo_reqwidth() + px(hgap)
+            if coluna and x + lw > largura:
+                linha, coluna, x = linha + 1, 0, 0
+            w.grid(row=linha, column=coluna, padx=(0, px(hgap)), pady=(0, px(vgap)), sticky="w")
+            x += lw
+            coluna += 1
+    frame.bind("<Configure>", refluir, add="+")
+    frame.after_idle(refluir)
+    return refluir
+
+
+# ----------------------------------------------------------------------------- marcador (chip com marca de seleção)
+class Marcador(tk.Canvas):
+    """Chip clicável: ligado mostra o ✓ e a cor da categoria; desligado fica apagado. Usado para escolher o que entra nos números."""
+    TONS = {"verde": ("verde_claro", "verde_escuro"), "vermelho": ("erro_claro", "erro"), "neutro": ("hover", "texto"),
+            "amarelo": ("aviso_fundo", "aviso_texto"), "azul": ("azul_claro", "azul")}
+
+    def __init__(self, pai, texto, variavel: tk.BooleanVar, comando=None, tom="verde", tam=10):
+        self._tom, self._texto, self.var, self.comando = tom, texto, variavel, comando
+        self._fonte = F(tam, "bold")
+        self._medida = tkfont.Font(family=self._fonte[0], size=self._fonte[1], weight="bold")
+        w = self._medida.measure("✓  " + texto) + px(26)
+        h = self._medida.metrics("linespace") + px(14)
+        super().__init__(pai, bg=_bg(pai), highlightthickness=0, bd=0, width=w, height=h, cursor="hand2")
+        self.bind("<Configure>", lambda e: self._desenhar())
+        self.bind("<Button-1>", self._alternar)
+        self._traco = variavel.trace_add("write", lambda *_: self._desenhar())
+
+    def _desenhar(self):
+        if not self.winfo_exists():
+            return
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        fundo, texto = self.TONS[self._tom]
+        ligado = bool(self.var.get())
+        self.configure(bg=_bg(self.master))
+        self.delete("all")
+        if ligado:
+            arredondado(self, 1, 1, w - 2, h - 2, h / 2, fill=_cor(fundo), outline=_cor(texto))
+            self.create_text(w / 2, h / 2, text="✓  " + self._texto, font=self._fonte, fill=_cor(texto))
+        else:
+            arredondado(self, 1, 1, w - 2, h - 2, h / 2, fill=_cor("superficie"), outline=_cor("borda_forte"))
+            self.create_text(w / 2, h / 2, text="    " + self._texto, font=F(self._fonte[1], "normal"), fill=_cor("suave"))
+
+    def _alternar(self, e=None):
+        self.var.set(not self.var.get())
+        if self.comando:
+            self.comando()
+
+    def cget(self, chave):
+        return self._texto if chave == "text" else super().cget(chave)
+
+
 # ----------------------------------------------------------------------------- interruptor (sim/não)
 class Interruptor(tk.Frame):
     def __init__(self, pai, texto, variavel: tk.BooleanVar, comando=None, tam=10, desabilitado=False):

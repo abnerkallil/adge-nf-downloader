@@ -74,5 +74,39 @@ class Planilha(unittest.TestCase):
         self.assertIsInstance(g.cell(7, 5).value, str)
 
 
+@unittest.skipIf(openpyxl is None, "openpyxl não instalado")
+class PlanilhaNFe(unittest.TestCase):
+    def gerar(self, ativos=None):
+        from adge_nf import nfe, planilha
+        from fixtures import doc_nfe, xml_nfe, xml_resnfe
+        eu, outro, cli = "11111111000111", "33333333000133", "22222222000122"
+        docs = [doc_nfe(1, xml_nfe(eu, cli, [("5102", 1000.0)], num=1, icms=100.0)), doc_nfe(2, xml_nfe(outro, eu, [("5102", 400.0)], num=2)),
+                doc_nfe(3, xml_resnfe(outro, 250.0, num=8), "res")]
+        arqs, resumo, _ = core.planejar({"tipos": {"prestado": False, "tomado": False}, "nfe": True}, [], eu, 2026, 9, None, {}, docs_nfe=docs)
+        caminho = pathlib.Path(tempfile.mkdtemp()) / "n.xlsx"
+        planilha.gerar_xlsx(caminho, "EMPRESA", 2026, 9, arqs, resumo, [], ativos=ativos)
+        return openpyxl.load_workbook(caminho)
+
+    def test_abas_e_sem_ciencia_separada(self):
+        wb = self.gerar()
+        self.assertIn("Canceladas", wb.sheetnames)
+        nomes = " ".join(wb.sheetnames)
+        self.assertIn("NF-e", nomes)
+        sem = [w for w in wb.worksheets if "ciência" in w.title.lower() or "ciencia" in w.title.lower()]
+        self.assertEqual(len(sem), 1)
+        texto = " ".join(str(c.value) for linha in sem[0].iter_rows() for c in linha if c.value)
+        self.assertIn("250", texto)                                                  # a nota resumo aparece na aba própria
+
+    def test_geral_marca_o_que_foi_considerado(self):
+        g = self.gerar()["Geral"]
+        marca = {g.cell(r, 1).value: g.cell(r, 5).value for r in range(3, 12) if g.cell(r, 5).value in ('Sim', 'Não')}
+        resumo = [v for k, v in marca.items() if "sem ciência" in str(k).lower()]
+        self.assertEqual(resumo, ["Não"])
+        self.assertIn("Sim", marca.values())
+        g2 = self.gerar({"nfe_saida", "nfe_entrada", "nfe_resumo"})["Geral"]
+        marca2 = {g2.cell(r, 1).value: g2.cell(r, 5).value for r in range(3, 12) if g2.cell(r, 5).value in ('Sim', 'Não')}
+        self.assertEqual([v for k, v in marca2.items() if "sem ciência" in str(k).lower()], ["Sim"])
+
+
 if __name__ == "__main__":
     unittest.main()

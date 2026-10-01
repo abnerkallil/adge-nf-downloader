@@ -3,10 +3,10 @@ import math
 import tkinter as tk
 from tkinter import ttk
 
-from . import NOME_APP, SITE_ADGE, core, credito, grafico, regimes
+from . import NOME_APP, SITE_ADGE, core, credito, grafico, regimes, totais
 from . import ui
 from .core import ErroAdge
-from .ui import P, Botao, Cartao, Chip, Interruptor, Modal, Rolavel, F, px, rotulo
+from .ui import P, Botao, Cartao, Chip, Interruptor, Marcador, Modal, Rolavel, F, px, rotulo
 
 AVISO_LEGAL = ("Simulação estimada, feita com as notas do período e os dados informados. Não considera retenções, benefícios, "
                "créditos reais, RAT/terceiros nem a tributação de lucros e dividendos, e não substitui a análise de um contador. "
@@ -141,21 +141,20 @@ class DialogoDadosFiscais(Modal):
 
 # ============================================================================= janela principal
 class DialogoAvancado(Modal):
-    def __init__(self, pai, store, emp: dict, resultado: dict):
+    def __init__(self, pai, store, emp: dict, resultado: dict, selecao=None):
         super().__init__(pai, f"Informações avançadas — {emp['nome']}", margem=0)
         self.store, self.emp, self.r = store, emp, resultado
         self.resizable(True, True)
         self.geometry(f"{px(1040)}x{px(800)}")
         self.minsize(px(900), px(600))
-        self.faturamento = resultado["resumo"].get("servico_prestado", {}).get("valor", 0.0)
-        self.tomados = resultado["resumo"].get("servico_tomado", {}).get("valor", 0.0)
         arqs = resultado["arquivos"]
-        self.tem = {"prestado": any(a["cat"] == "servico_prestado" for a in arqs),
-                    "tomado": any(a["cat"] == "servico_tomado" for a in arqs)}
+        self.cats = [c for c in core.ORDEM_CATEGORIAS if any(a["cat"] == c for a in arqs)]
+        # a mesma seleção da janela de busca: marcar aqui também muda lá, e vice-versa
+        self.sel = selecao or totais.Selecao(totais.padrao_ativos(self.cats))
         self.v_modo = tk.StringVar(value="parte")
-        self.v_filtro = tk.StringVar(value="ambos" if all(self.tem.values()) else ("prestado" if self.tem["prestado"] else "tomado"))
         self.destaque = None
         self.itens = []
+        self.marcas = {}
         self.rolagem = Rolavel(self, pad=24)
         self.rolagem.pack(fill="both", expand=True)
         self.corpo = self.rolagem.corpo
@@ -164,17 +163,54 @@ class DialogoAvancado(Modal):
         self.f_comp = tk.Frame(self.corpo, bg=P.fundo)
         self.f_comp.pack(fill="x", pady=(20, 0))
         self._rodape()
+        self.sel.ao_mudar(self._mudou_selecao)
         self._atualizar_grafico()
         self._render_comparativo()
         self.bind("<Escape>", lambda *_: self.destroy())
+        self.bind("<Destroy>", self._ao_destruir, add="+")
         self.mostrar()
         self.after(250, self._fluxo_dados)
+
+    def _ao_destruir(self, e):
+        if e.widget is self:
+            self.sel.esquecer(self._mudou_selecao)
+
+    def _mudou_selecao(self):
+        if not self.winfo_exists():
+            return
+        for c, var in self.marcas.items():
+            if var.get() != self.sel.ativa(c):
+                var.set(self.sel.ativa(c))
+        self.destaque = None
+        self._atualizar_grafico()
+        self._render_comparativo()
+        self._atualizar_topo()
 
     # ------------------------------------------------------------------ partes
     def _topo(self):
         ui.titulo(self.corpo, "Informações avançadas",
-                  f"{self.emp['nome']} · {core.mes_exibicao(self.r['mes'])}/{self.r['ano']} · "
-                  f"{len(self.r['arquivos'])} nota(s) consideradas").pack(anchor="w", pady=(0, 12))
+                  f"{self.emp['nome']} · {core.mes_exibicao(self.r['mes'])}/{self.r['ano']}").pack(anchor="w", pady=(0, 8))
+        self.l_qtd = rotulo(self.corpo, "", 10, cor="suave", largura=px(960))
+        self.l_qtd.pack(anchor="w")
+        if len(self.cats) > 1:
+            rotulo(self.corpo, "Considerar no gráfico e na análise de regimes", 10, "bold", "verde_escuro").pack(anchor="w", pady=(8, 4))
+            f = tk.Frame(self.corpo, bg=P.fundo)
+            f.pack(fill="x", pady=(0, 10))
+            por, ws = totais.por_categoria(self.r["arquivos"]), []
+            for c in self.cats:
+                info = core.CATEGORIAS[c]
+                x = por.get(c, {"qtd": 0, "valor": 0.0})
+                tom = "amarelo" if c == "nfe_resumo" else {"receita": "verde", "custo": "vermelho"}.get(info["lado"], "neutro")
+                var = tk.BooleanVar(value=self.sel.ativa(c))
+                self.marcas[c] = var
+                ws.append(Marcador(f, f"{info['rotulo']} · {x['qtd']} · R$ {num_br(x['valor'])}", var,
+                                   lambda c=c, v=var: self.sel.definir(c, v.get()), tom=tom, tam=9))
+            ui.fluxo(f, ws)
+        self._atualizar_topo()
+
+    def _atualizar_topo(self):
+        n = len(totais.filtrar(self.r["arquivos"], self.sel.ativos))
+        self.l_qtd.config(text=f"{n} nota(s) consideradas de {len(self.r['arquivos'])} encontradas.")
 
     def _grafico(self):
         ui.secao(self.corpo, "Para onde vai o dinheiro e de onde ele vem").pack(anchor="w", pady=(0, 8))
@@ -194,14 +230,6 @@ class DialogoAvancado(Modal):
         rotulo(dir_, "Ver por", 11, "bold", "verde_escuro").pack(anchor="w")
         for k, nome in grafico.MODOS.items():
             ui.radio(dir_, nome, k, self.v_modo, self._mudou).pack(anchor="w", pady=1)
-        rotulo(dir_, "Notas", 11, "bold", "verde_escuro").pack(anchor="w", pady=(10, 0))
-        self.rb_filtro = {}
-        for k, nome in grafico.FILTROS.items():
-            rb = ui.radio(dir_, nome, k, self.v_filtro, self._mudou)
-            rb.pack(anchor="w", pady=1)
-            self.rb_filtro[k] = rb
-            if (k == "ambos" and not all(self.tem.values())) or (k in self.tem and not self.tem[k]):
-                rb.config(state="disabled")
         rotulo(dir_, "Legenda", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 2))
         self.f_legenda = tk.Frame(dir_, bg=P.superficie)
         self.f_legenda.pack(fill="x")
@@ -221,8 +249,7 @@ class DialogoAvancado(Modal):
         self._atualizar_grafico()
 
     def _atualizar_grafico(self):
-        modo, filtro = self.v_modo.get(), self.v_filtro.get()
-        self.itens = grafico.agrupar(self.r["arquivos"], modo, filtro)
+        self.itens = grafico.agrupar(self.r["arquivos"], self.v_modo.get(), set(self.sel.ativos))
         self._desenhar()
         self._legenda()
 
@@ -232,7 +259,7 @@ class DialogoAvancado(Modal):
         cx = cy = self.tam / 2
         raio = self.tam * 0.43
         if not self.itens:
-            t.create_text(cx, cy, text="Sem notas para este filtro.", fill=P.suave, font=F(11))
+            t.create_text(cx, cy, text="Nenhuma categoria marcada." if not self.sel.ativos else "Sem notas para esta seleção.", fill=P.suave, font=F(11))
             return
         angs = grafico.angulos(self.itens)
         for i, ((rot, valor, p), (ini, ext)) in enumerate(zip(self.itens, angs)):
@@ -318,25 +345,30 @@ class DialogoAvancado(Modal):
             w.destroy()
         ui.secao(self.f_comp, "Seu regime tributário no período").pack(anchor="w", pady=(0, 8))
         f = self.emp.get("fiscal") or {}
-        if not self.tem["prestado"]:
-            rotulo(self.f_comp, "Para comparar regimes é preciso ter o faturamento: busque também os serviços prestados.",
-                   10, cor="suave", largura=px(900)).pack(anchor="w")
+        ativ = totais.atividades(self.r["arquivos"], self.sel.ativos)
+        if ativ["faturamento"] <= 0:
+            rotulo(self.f_comp, "Para comparar regimes é preciso ter faturamento: marque serviços prestados ou NF-e de venda "
+                                "(e busque esses tipos de nota, se ainda não buscou).", 10, cor="suave", largura=px(900)).pack(anchor="w")
             return
         if not regimes.fiscal_completo(f):
             rotulo(self.f_comp, "Informe os dados fiscais da empresa (regime atual, receita e folha dos últimos 12 meses) "
                                 "para ver quanto ela pagaria em cada regime.", 10, cor="suave", largura=px(900)).pack(anchor="w")
             Botao(self.f_comp, "Informar dados fiscais", self._editar_dados, estilo="primario").pack(anchor="w", pady=(10, 0))
             return
-        cred = credito.estimar(self.r["arquivos"])
-        pj = credito.participacao_pj(self.r["arquivos"])
-        res = regimes.comparar(self.faturamento, self.tomados, f, cred["pis_cofins"], cred["ibs_cbs"], pj)
+        filtrados = totais.filtrar(self.r["arquivos"], self.sel.ativos)
+        cred = credito.estimar(filtrados)
+        pj = credito.participacao_pj(filtrados)
+        self.faturamento, self.tomados = ativ["faturamento"], ativ["tomados"]
+        res = regimes.comparar(self.faturamento, self.tomados, f, cred["pis_cofins"], cred["ibs_cbs"], pj,
+                               receitas=ativ["receitas"],
+                               icms={"debito": ativ["icms_debito"], "credito": ativ["icms_credito"]})
         self.res = res
         cen = {c["chave"]: c for c in res["cenarios"]}
         atual = cen.get(res["atual"])
         resumo = Cartao(self.f_comp, fundo="verde_claro", borda="verde_claro")
         resumo.pack(fill="x")
         c = resumo.corpo
-        rotulo(c, f"Faturamento do período: R$ {num_br(self.faturamento)} · notas tomadas: R$ {num_br(self.tomados)}",
+        rotulo(c, f"Faturamento considerado: R$ {num_br(self.faturamento)} · compras e serviços tomados: R$ {num_br(self.tomados)}",
                11, "bold", "verde_escuro").pack(anchor="w")
         if res["grupo"] == "simples":
             comp = "Comparação para quem está no Simples Nacional: DAS unificado × opção pelo regime regular de IBS/CBS."
@@ -372,7 +404,7 @@ class DialogoAvancado(Modal):
         if not cred["linhas"]:
             return
         rotulo(self.f_comp, "Créditos considerados nas notas tomadas", 12, "bold", "verde_escuro").pack(anchor="w", pady=(16, 0))
-        rotulo(self.f_comp, "Estimados pelo item da LC 116 do serviço e pelo regime do fornecedor (a NFS-e não traz CFOP). "
+        rotulo(self.f_comp, "Estimados pelo item da LC 116 (serviços, que não trazem CFOP) e pelo CFOP de cada item (mercadorias), e pelo regime do fornecedor. "
                             "O direito ao crédito depende do uso do serviço na atividade: confirme com o contador.",
                9, cor="suave", largura=px(900)).pack(anchor="w", pady=(0, 6))
         cartao = Cartao(self.f_comp, pad=12)

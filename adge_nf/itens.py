@@ -33,6 +33,13 @@ CATALOGO = {
     "ITEM-24": "Sobre o projeto e contato com a Adge",
     "ITEM-25": "Mensagens e janelas de aviso",
     "ITEM-26": "Créditos das notas tomadas",
+    "ITEM-27": "Busca de NF-e (modelo 55)",
+    "ITEM-28": "Ciência da Operação",
+    "ITEM-29": "Histórico de NF-e e limite da SEFAZ",
+    "ITEM-30": "Seleção do que entra nos relatórios",
+    "ITEM-31": "Planilha com NF-e e notas sem ciência",
+    "ITEM-32": "Regimes com mercadorias e ICMS",
+    "ITEM-33": "Operações e créditos por CFOP",
 }
 
 PADRAO = re.compile(r"^ITEM-\d{2,3}$")

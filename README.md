@@ -1,18 +1,21 @@
 # Adge Group - NF Downloader
 
 Programa **gratuito** para Windows, criado pela [Adge](https://adge.com.br/), que baixa as **NFS-e Nacional**
-(emitidas e recebidas) de uma empresa usando o **certificado digital A1** dela. Ele soma o faturamento do mês,
+(emitidas e recebidas) e, se a empresa quiser, as **NF-e (modelo 55)** de uma empresa usando o **certificado digital A1** dela. Ele soma o faturamento do mês,
 calcula o saldo entre serviços prestados e tomados, salva os XMLs já renomeados e organizados em pastas, gera uma
 planilha Excel do período e oferece uma análise avançada com gráfico e comparativo de regimes tributários.
 
 - Funciona **somente no computador do usuário**. Não existe servidor, conta, nuvem nem coleta de dados.
-- O certificado é usado apenas para se comunicar com o ADN oficial (`adn.nfse.gov.br`), a API do governo.
+- O certificado é usado apenas para se comunicar com o ADN oficial (`adn.nfse.gov.br`) e, se a NF-e estiver ligada, com a
+  Distribuição de DF-e da SEFAZ (`nfe.fazenda.gov.br`), as APIs do governo.
 - Cada empresa precisa do **próprio** certificado A1, pois o ADN só entrega as notas do CNPJ do certificado.
 
 ## Principais recursos
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.
+- **NF-e (modelo 55)**, opcional e desligada por padrão: vendas, compras e devoluções entram no mesmo relatório, com marcas
+  para escolher o que conta nos totais, no gráfico e na análise de regimes. Veja a seção **NF-e** abaixo.
 - Organização automática dos arquivos em pastas por cliente, ano e mês, com nomes padronizados.
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.
 - **Informações avançadas**: gráfico de pizza e comparativo de regimes adequado ao enquadramento da empresa
@@ -49,6 +52,20 @@ Atalhos: **Ctrl+N** adiciona uma empresa e **Enter** abre a busca da empresa sel
 modo escuro, a senha mestra, as pastas e as atualizações; em **Sobre**, a apresentação do projeto e os links para avaliar.
 
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
+
+## NF-e (modelo 55)
+Na empresa, a opção **NF-e de compra e venda** vem desligada; ao ligar, um aviso explica o que muda. A consulta usa a
+Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1.
+- **Consulta por sequência (NSU)**, não por mês. O programa guarda o último NSU e baixa só o novo; depois filtra pelo mês escolhido.
+- **Limite da SEFAZ**: sem nota nova, ela só libera outra consulta depois de cerca de 1 hora. O limite é da SEFAZ, não do programa.
+  A tela mostra um contador e, enquanto bloqueada, o resultado sai do **histórico guardado** no computador (pasta do sistema, por empresa,
+  ou outra pasta à escolha). Depois de cada consulta o programa pergunta se o histórico fica guardado.
+- **Ciência da Operação** (opção separada, desligada por padrão): registra o evento 210210 das compras para a SEFAZ liberar o XML completo.
+  É um ato em nome da empresa; o aviso explica os riscos e que ele não é um risco fiscal por si só. Só a ciência é enviada.
+- **Notas sem ciência** chegam só em resumo: ficam em aba separada da planilha e só entram nos totais se marcadas (como compra, pelo valor total).
+- **Categorias** com marca: serviço prestado, serviço tomado, NF-e de venda, de compra, devoluções, outras operações e NF-e sem ciência.
+  A seleção vale para cartões, tabela, saldo, gráfico, regimes e planilha. O CFOP decide a categoria; remessas, transferências e
+  bonificações ficam em "outras operações" e não somam. O valor é o total da nota (vNF).
 
 ## Planilha Excel
 A planilha é gerada na mesma pasta dos XMLs e contém:
@@ -124,7 +141,8 @@ Desinstalar o programa **não apaga** as empresas, os certificados e as senhas s
 Para removê-los, abrir **Configurações → Apagar todos os meus dados salvos** antes de desinstalar.
 
 ## Limites desta versão
-- Somente **NFS-e Nacional** (prestado e tomado). A **NF-e** (compra e venda) usa outro serviço da SEFAZ e fica para uma versão futura.
+- **NFS-e Nacional** (prestado e tomado) e **NF-e modelo 55**. NFC-e e CT-e ficam de fora. A classificação por CFOP, os pesos de crédito e
+  as tabelas do Simples (Anexos I e II) são uma orientação: o contador confere.
 - Somente **XML**: o PDF/DANFSe exige captcha no portal e não há API oficial sem ele.
 - O período usa a data de processamento da nota no ADN. O valor somado é o **valor do serviço (vServ)**,
   antes de retenções e deduções.

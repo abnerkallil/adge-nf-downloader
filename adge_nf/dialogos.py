@@ -11,6 +11,7 @@ from tkinter import filedialog, ttk
 from . import NOME_APP, SITE_ADGE, URL_GITHUB, URL_GOOGLE_ADGE, VERSAO, atualizacao, core
 from . import ui
 from .core import Cancelado, ErroAdge
+from .nfe_ui import DialogoAtivarCiencia, DialogoAtivarNFe
 from .store import Armazenamento, empresa_padrao
 from .ui import P, Botao, Campo, Cartao, Chip, Interruptor, Modal, Segmentado, F, px, rotulo
 
@@ -34,7 +35,8 @@ class DialogoEmpresa(Modal):
         self.v_estrutura = v(e["estrutura"])
         self.v_prest = tk.BooleanVar(value=e["tipos"].get("prestado", True))
         self.v_tom = tk.BooleanVar(value=e["tipos"].get("tomado", True))
-        self.v_nfe = tk.BooleanVar(value=False)
+        self.v_nfe = tk.BooleanVar(value=bool(e.get("nfe")))
+        self.v_ciencia = tk.BooleanVar(value=bool(e.get("nfe_ciencia")) and bool(e.get("nfe")))
         self.v_acao = v(e["acao"])
         self.v_rel, self.v_csv = tk.BooleanVar(value=e["relatorio"]), tk.BooleanVar(value=e.get("planilha", e.get("csv", False)))
         self.v_lembrar = tk.BooleanVar(value=bool(e["senha_cifrada"]) or self.novo)
@@ -121,13 +123,40 @@ class DialogoEmpresa(Modal):
         rotulo(d, "O que baixar", 11, "bold", "verde_escuro").pack(anchor="w", pady=(0, 6))
         Interruptor(d, "Serviço prestado (NFS-e emitidas)", self.v_prest).pack(anchor="w", pady=3)
         Interruptor(d, "Serviço tomado (NFS-e recebidas)", self.v_tom).pack(anchor="w", pady=3)
-        Interruptor(d, "NF-e de compra e venda (em breve)", self.v_nfe, desabilitado=True).pack(anchor="w", pady=3)
+        Interruptor(d, "NF-e de compra e venda (modelo 55)", self.v_nfe, self._ligar_nfe).pack(anchor="w", pady=3)
+        Interruptor(d, "Registrar a Ciência da Operação automaticamente", self.v_ciencia, self._ligar_ciencia, tam=9).pack(
+            anchor="w", pady=(0, 3), padx=(px(26), 0))
         ui.divisor(d, (12, 12))
         rotulo(d, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(0, 6))
         for valor, txt in (("ambos", "Calcular o total e baixar os XMLs"), ("calcular", "Só calcular o total do período"),
                            ("baixar", "Só baixar os XMLs")):
             ui.radio(d, txt, valor, self.v_acao, self._atualizar).pack(anchor="w", pady=2)
         return f
+
+    # ------------------------------------------------------------------ NF-e (começa desligada; ligar abre um aviso)
+    def _ligar_nfe(self):
+        if self.v_nfe.get():
+            d = DialogoAtivarNFe(self)
+            self.wait_window(d)
+            if not d.resultado:
+                self.v_nfe.set(False)
+            self.grab_set()
+        else:
+            self.v_ciencia.set(False)
+
+    def _ligar_ciencia(self):
+        if not self.v_ciencia.get():
+            return
+        if not self.v_nfe.get():
+            ui.avisar(self, "Ative a busca de NF-e primeiro", "A ciência da operação só vale para empresas com a busca de NF-e ligada.")
+            self.v_ciencia.set(False)
+            self.grab_set()
+            return
+        d = DialogoAtivarCiencia(self)
+        self.wait_window(d)
+        if not d.resultado:
+            self.v_ciencia.set(False)
+        self.grab_set()
 
     # ------------------------------------------------------------------ aba 2
     def _aba_destino(self, pai):
@@ -228,7 +257,7 @@ class DialogoEmpresa(Modal):
             problema = "Escolha o arquivo do certificado (.pfx ou .p12)."
         elif len(cnpj) != 14:
             problema = "O CNPJ precisa ter 14 dígitos. Use \"Validar certificado\" para preencher sozinho."
-        elif not (self.v_prest.get() or self.v_tom.get()):
+        elif not (self.v_prest.get() or self.v_tom.get() or self.v_nfe.get()):
             problema = "Marque pelo menos um tipo de nota."
         elif acao != "calcular" and (not self.v_destino.get().strip() or not Path(self.v_destino.get().strip()).is_dir()):
             problema, aba = "Escolha a pasta onde os XMLs serão salvos.", "destino"
@@ -250,7 +279,7 @@ class DialogoEmpresa(Modal):
                 return
         e.update({"nome": nome, "cnpj": cnpj, "pfx": pfx, "destino": self.v_destino.get().strip(),
                   "estrutura": estrutura, "tipos": {"prestado": self.v_prest.get(), "tomado": self.v_tom.get()},
-                  "nfe": False, "acao": acao, "relatorio": self.v_rel.get(), "planilha": self.v_csv.get(),
+                  "nfe": self.v_nfe.get(), "nfe_ciencia": self.v_ciencia.get() and self.v_nfe.get(), "acao": acao, "relatorio": self.v_rel.get(), "planilha": self.v_csv.get(),
                   "prefixo_prestado": self.v_pref_prest.get().strip(), "prefixo_tomado": self.v_pref_tom.get().strip()})
         if self._validade:
             e["cert_validade"] = self._validade.isoformat()

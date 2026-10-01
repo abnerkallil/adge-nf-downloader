@@ -1,12 +1,14 @@
 """Agrupamentos para o gráfico de pizza e conversão de números digitados em português."""
 from __future__ import annotations
 
-from . import classificacao
+from . import cfop as cfop_mod
+from . import classificacao, core
 
 PALETA = ["#1B9E5A", "#2F80ED", "#F2994A", "#9B51E0", "#EB5757", "#2DB7C9", "#E0B000", "#7BC47F", "#C2599B", "#4F6D7A"]
 COR_OUTROS = "#B8C2BC"
-MODOS = {"parte": "Cliente / fornecedor", "servico": "Tipo de serviço (LC 116)", "tipo": "Prestado × Tomado"}
-FILTROS = {"ambos": "Prestados e tomados", "prestado": "Só prestados", "tomado": "Só tomados"}
+MODOS = {"parte": "Cliente / fornecedor", "servico": "Serviço (LC 116) ou CFOP", "tipo": "Tipo de nota"}
+FILTROS = {"ambos": "Prestados e tomados", "prestado": "Só prestados", "tomado": "Só tomados"}   # só para chamadas antigas
+ROTULO_TIPO = {"servico_prestado": "Serviços prestados", "servico_tomado": "Serviços tomados"}
 
 
 def parse_brl(texto) -> float:
@@ -24,23 +26,47 @@ def parse_brl(texto) -> float:
         raise ValueError(f"Número inválido: {texto}")
 
 
-def agrupar(arquivos: list, modo: str = "parte", filtro: str = "ambos", top: int = 8) -> list:
-    """Devolve [(rótulo, valor, percentual)] em ordem decrescente; o que passa do `top` vira 'Outros'."""
+def _selecao(filtro):
+    """Aceita o formato antigo ('ambos'/'prestado'/'tomado') ou um conjunto de categorias. None = tudo."""
+    if filtro is None or filtro == "ambos":
+        return None
+    if isinstance(filtro, str):
+        lado = "receita" if filtro == "prestado" else "custo"
+        return {c for c, v in core.CATEGORIAS.items() if v["lado"] == lado}
+    return set(filtro)
+
+
+def _rotulo_servico(a: dict) -> str:
+    d = a["doc"]
+    if a["cat"].startswith("nfe_") and a["cat"] != "nfe_resumo":
+        cod = cfop_mod.formatar(d.get("cfop"))
+        nat = (d.get("natureza") or "").strip()
+        return f"CFOP {cod} · {nat}" if cod and nat else (f"CFOP {cod}" if cod else "NF-e sem CFOP")
+    if a["cat"] == "nfe_resumo":
+        return "NF-e sem ciência (sem CFOP)"
+    return classificacao.rotulo_servico(d)
+
+
+def agrupar(arquivos: list, modo: str = "parte", filtro=None, top: int = 8) -> list:
+    """Devolve [(rótulo, valor, percentual)] em ordem decrescente; o que passa do `top` vira 'Outros'.
+    `filtro`: conjunto de categorias marcadas (ou 'ambos'/'prestado'/'tomado', das chamadas antigas)."""
+    ativas = _selecao(filtro)
+    arquivos = [a for a in arquivos if ativas is None or a["cat"] in ativas]
+    lados = {core.CATEGORIAS[a["cat"]]["lado"] for a in arquivos}
     soma: dict = {}
     for a in arquivos:
-        prestado = a["cat"] == "servico_prestado"
-        if modo != "tipo" and filtro != "ambos" and (filtro == "prestado") != prestado:
-            continue
+        info = core.CATEGORIAS[a["cat"]]
         d = a["doc"]
         if modo == "tipo":
-            chave = "Serviços prestados" if prestado else "Serviços tomados"
+            chave = ROTULO_TIPO.get(a["cat"]) or info["rotulo"]
         elif modo == "servico":
-            chave = classificacao.rotulo_servico(d)
+            chave = _rotulo_servico(a)
         else:
-            nome = (d["tomador_nome"] or d["tomador_doc"]) if prestado else (d["emitente_nome"] or d["emitente_doc"])
+            receita = info["lado"] == "receita"
+            nome = (d["tomador_nome"] or d["tomador_doc"]) if receita else (d["emitente_nome"] or d["emitente_doc"])
             chave = (nome or "(sem nome)").strip()
-            if filtro == "ambos":
-                chave += " · cliente" if prestado else " · fornecedor"
+            if "receita" in lados and "custo" in lados:
+                chave += " · cliente" if receita else " · fornecedor"
         soma[chave] = soma.get(chave, 0.0) + a["doc"]["valor"]
     itens = sorted(((k, round(v, 2)) for k, v in soma.items() if v > 0), key=lambda t: -t[1])
     if len(itens) > top + 1:

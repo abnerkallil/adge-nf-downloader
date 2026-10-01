@@ -52,6 +52,7 @@ def principal():
         pfx.write_bytes(b"x")
         store = Armazenamento(t / "dados", keyring_mod=CofreFalso())
         store.preferencias["verificar_atualizacao"] = False  # o teste não conversa com o GitHub de verdade
+        store.preferencias["boas_vindas_vista"] = True       # o cartão de boas-vindas tem teste próprio (no fim)
         app = A.App(store)
         app.update()
         passo("janela principal abre")
@@ -294,6 +295,23 @@ def principal():
         assert d.l_relatorio.cget("text").startswith("Ver relatório completo")
         d.destroy()
         passo("aviso de atualização lista as novidades por item e versão")
+
+        # --- boas-vindas: só na primeira abertura; Configurações permite rever
+        assert A.boas_vindas_pendente({}) and not A.boas_vindas_pendente({"boas_vindas_vista": True})
+        store.preferencias.pop("boas_vindas_vista")
+        abertos_url = []
+        import webbrowser
+        webbrowser.open = lambda u, *a, **k: abertos_url.append(u)
+        d = A.DialogoBoasVindas(app, store)
+        d.update()
+        todo = " ".join(w.cget("text") for w in d.winfo_children() if hasattr(w, "cget") and "text" in w.keys())
+        assert "sem fins lucrativos" in todo and "Avaliar no GitHub" in [b.cget("text") for b in (d.b_github, d.b_google, d.b_site)]
+        d.b_github.invoke(); d.b_google.invoke()
+        assert any("github.com" in u for u in abertos_url) and any("maps.app.goo.gl" in u for u in abertos_url), abertos_url
+        d.b_ok.invoke()
+        assert store.preferencias["boas_vindas_vista"] is True and not A.boas_vindas_pendente(store.preferencias)
+        assert app.b_apresentacao.cget("text") == "Ver a apresentação do projeto"
+        passo("boas-vindas aparece uma vez e Configurações permite rever")
 
         # --- configurações
         store.trocar_modo("mestra123")

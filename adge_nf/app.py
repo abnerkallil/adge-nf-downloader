@@ -10,7 +10,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import NOME_APP, VERSAO, atualizacao, core
+from . import NOME_APP, SITE_ADGE, URL_GITHUB, URL_GOOGLE_ADGE, VERSAO, atualizacao, core
 from .core import Cancelado, ErroAdge
 from . import planilha as _plan
 from .store import Armazenamento, empresa_padrao
@@ -43,6 +43,7 @@ def aplicar_tema(raiz: tk.Misc):
     s.configure("Titulo.TLabel", font=("Segoe UI Semibold", 16), foreground=VERDE_ESC)
     s.configure("Sec.TLabel", font=("Segoe UI Semibold", 11), foreground=VERDE_ESC)
     s.configure("Card.TLabel", background=VERDE_CLARO, foreground=VERDE_ESC)
+    s.configure("CardTitulo.TLabel", background=VERDE_CLARO, foreground=VERDE_ESC, font=("Segoe UI Semibold", 11))
     s.configure("CardValor.TLabel", background=VERDE_CLARO, foreground=VERDE_ESC, font=("Segoe UI Semibold", 18))
     s.configure("Erro.TLabel", foreground=ERRO)
     s.configure("Ok.TLabel", foreground=VERDE_ESC)
@@ -901,6 +902,75 @@ class DialogoAtualizacao(Modal):
         self.destroy()
 
 
+# ============================================================================= boas-vindas
+PREF_BOAS_VINDAS = "boas_vindas_vista"
+
+
+def boas_vindas_pendente(prefs: dict) -> bool:
+    """O cartão de boas-vindas aparece uma única vez (depois, só pelo botão em Configurações)."""
+    return not prefs.get(PREF_BOAS_VINDAS)
+
+
+class DialogoBoasVindas(Modal):
+    """Cartão da primeira abertura: o que é o projeto, para quem é e como contribuir."""
+
+    TEXTOS = (
+        ("Para quem é",
+         "Contadores e auxiliares de contabilidade que baixam, conferem e organizam notas fiscais todo mês e não "
+         "deveriam precisar colocar a mão no bolso toda vez que precisam de uma função básica."),
+        ("Por que existe",
+         "Este programa é uma iniciativa sem fins lucrativos da Adge. A ideia é resolver, de forma gratuita, "
+         "problemas do dia a dia de pequenas empresas e de quem cuida da contabilidade delas."),
+        ("Seus dados ficam com você",
+         "Tudo roda só neste computador. Não há conta, servidor nem coleta de dados."),
+    )
+
+    def __init__(self, pai, store: Armazenamento):
+        super().__init__(pai, "Bem-vindo")
+        self.store = store
+        self._montar()
+        self.protocol("WM_DELETE_WINDOW", self._fechar)
+        self.bind("<Escape>", lambda *_: self._fechar())
+        self.mostrar()
+
+    def _montar(self):
+        ttk.Label(self, text="Bem-vindo ao Adge Group - NF Downloader", style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(self, text="Uma iniciativa sem fins lucrativos para quem faz contabilidade", style="Muted.TLabel").pack(anchor="w", pady=(0, 12))
+        cartao = ttk.Frame(self, style="Card.TFrame", padding=(18, 14))
+        cartao.pack(fill="x")
+        self.blocos = []
+        for i, (titulo, texto) in enumerate(self.TEXTOS):
+            ttk.Label(cartao, text=titulo, style="CardTitulo.TLabel").pack(anchor="w", pady=(0 if i == 0 else 10, 2))
+            ttk.Label(cartao, text=texto, style="Card.TLabel", wraplength=500, justify="left").pack(anchor="w")
+            self.blocos.append(titulo)
+        ttk.Label(self, text="Quer ajudar?", style="Sec.TLabel").pack(anchor="w", pady=(16, 2))
+        ttk.Label(self, wraplength=540, justify="left",
+                  text="Se o programa te ajudou, deixe uma avaliação no GitHub ou no perfil da Adge no Google. "
+                       "É a melhor forma de contribuir, e não custa nada.").pack(anchor="w")
+        links = ttk.Frame(self)
+        links.pack(fill="x", pady=(10, 0))
+        self.b_github = botao(links, "Avaliar no GitHub", lambda: webbrowser.open(URL_GITHUB))
+        self.b_github.pack(side="left")
+        self.b_google = botao(links, "Avaliar no Google", lambda: webbrowser.open(URL_GOOGLE_ADGE))
+        self.b_google.pack(side="left", padx=(8, 0))
+        self.b_site = botao(links, "Conhecer a Adge", lambda: webbrowser.open(SITE_ADGE))
+        self.b_site.pack(side="left", padx=(8, 0))
+        if not URL_GITHUB:
+            self.b_github.pack_forget()
+        fim = ttk.Frame(self)
+        fim.pack(fill="x", pady=(18, 0))
+        self.b_ok = botao(fim, "Começar", self._fechar, primario=True)
+        self.b_ok.pack(side="right")
+
+    def _fechar(self):
+        self.store.preferencias[PREF_BOAS_VINDAS] = True
+        try:
+            self.store.salvar()
+        except OSError:
+            pass
+        self.destroy()
+
+
 # ============================================================================= janela principal
 class AbaRolavel(ttk.Frame):
     """Frame com barra de rolagem vertical: o conteúdo vai em `.corpo`."""
@@ -948,6 +1018,16 @@ class App(tk.Tk):
         self.fila_att: "queue.Queue" = queue.Queue()
         self.sessao_att = None  # os testes injetam uma sessão falsa
         self.after(300, self._ler_fila_att)
+        self.after(250, self._abertura)
+
+    def _abertura(self):
+        """Primeira abertura: cartão de boas-vindas. Depois, a consulta diária de versão nova (sem sobrepor janelas)."""
+        if not self.winfo_exists():
+            return
+        if boas_vindas_pendente(self.store.preferencias):
+            self.wait_window(DialogoBoasVindas(self, self.store))
+        if not self.winfo_exists():
+            return
         if self.store.preferencias.get("verificar_atualizacao", True) and atualizacao.deve_checar(self.store.preferencias):
             self._checar_atualizacao()
 
@@ -1104,6 +1184,8 @@ class App(tk.Tk):
                   text=f"{NOME_APP} v{VERSAO} — gratuito. Roda só no seu computador: não há servidor nem conta. "
                        "O certificado A1 é usado apenas para conversar com o ADN oficial da NFS-e Nacional (adn.nfse.gov.br).\n"
                        "Nunca compartilhe o arquivo do certificado nem a senha.").pack(anchor="w")
+        self.b_apresentacao = botao(aba, "Ver a apresentação do projeto", lambda: DialogoBoasVindas(self, self.store))
+        self.b_apresentacao.pack(anchor="w", pady=(8, 0))
 
     def _atualizar_seguranca(self):
         if self.store.modo == "mestra":

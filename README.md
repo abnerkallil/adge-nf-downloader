@@ -118,7 +118,12 @@ Para removê-los, abrir **Configurações → Apagar todos os meus dados salvos*
 - Municípios que ainda não aderiram ao padrão nacional não aparecem no ADN.
 
 ## Sobre a Adge
-A [Adge](https://adge.com.br/) é uma empresa de contabilidade. Este programa é oferecido gratuitamente à comunidade.
+A [Adge](https://adge.com.br/) é uma empresa de contabilidade. Este programa é uma **iniciativa sem fins lucrativos**, criada para
+ajudar contadores e auxiliares de contabilidade no dia a dia, sem que precisem pagar por uma função básica a cada vez, e para resolver
+problemas de pequenas empresas de forma gratuita.
+
+Na primeira abertura, o programa mostra um cartão de boas-vindas com essa apresentação (ele pode ser revisto em
+**Configurações → Sobre**). Quem quiser contribuir pode deixar uma avaliação aqui no GitHub ou no perfil da Adge no Google.
 
 ## Para desenvolvedores
 ```

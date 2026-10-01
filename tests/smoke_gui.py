@@ -123,6 +123,43 @@ def principal():
         b2.destroy()
         passo("modo só calcular")
 
+        # --- informações avançadas: gráfico + comparativo de regimes
+        from adge_nf import avancado as AV
+        AV.DialogoAvancado._fluxo_dados = lambda self: None          # sem janelas bloqueantes no teste
+        assert b.b_avancado.winfo_ismapped()
+        b._avancado()
+        av = [w for w in b.winfo_toplevel().winfo_children() if isinstance(w, AV.DialogoAvancado)][0]
+        av.update()
+        assert [x[0] for x in av.itens][0].startswith("CLIENTE") or av.itens, av.itens
+        av.v_modo.set("tipo"); av._mudou()
+        assert {x[0] for x in av.itens} == {"Serviços prestados", "Serviços tomados"}, av.itens
+        av._clicar(0)
+        assert "R$" in av.l_detalhe.cget("text")
+        # sem dados fiscais: pede para informar
+        assert any("Informar dados fiscais" in str(w.cget("text")) for w in av.f_comp.winfo_children() if w.winfo_class() == "TButton")
+        d = AV.DialogoDadosFiscais(av, store, av.emp)
+        d.v_rbt.set("360.000,00"); d.v_folha.set("120.000,00"); d.v_regime.set("Lucro Presumido"); d.v_iss.set("5")
+        d._salvar()
+        assert d.salvou, d.l_erro.cget("text")
+        assert store.obter(av.emp["id"])["fiscal"]["regime"] == "presumido"
+        av._render_comparativo()
+        av.update()
+        txt = []
+        def varre(w):
+            try:
+                txt.append(str(w.cget("text")))
+            except tk.TclError:
+                pass
+            for f in w.winfo_children():
+                varre(f)
+        import tkinter as tk
+        varre(av.f_comp)
+        junto = " ".join(txt)
+        assert "Simples Nacional" in junto and "Lucro Real" in junto and "IBS/CBS" in junto, junto[:400]
+        assert "Mais econômico" in junto
+        passo("informações avançadas: pizza, dados fiscais e comparativo")
+        av.destroy()
+
         # --- pasta fora do padrão Adge: não trava, deixa escolher outra pasta
         (t / "cliente_sem_padrao").mkdir()
         emp3 = dict(emp, estrutura="adge", destino=str(t / "cliente_sem_padrao"))

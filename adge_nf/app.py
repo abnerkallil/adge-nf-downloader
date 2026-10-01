@@ -449,6 +449,7 @@ class DialogoBusca(Modal):
         self.b_csv = botao(self.f_botoes, "Exportar planilha...", self._exportar_planilha)
         self.b_copiar = botao(self.f_botoes, "Copiar totais", self._copiar)
         self.b_pasta = botao(self.f_botoes, "Escolher pasta...", self._escolher_pasta)
+        self.b_avancado = botao(self.f_botoes, "Informações avançadas", self._avancado)
         botao(self.f_botoes, "Fechar", self._fechar).pack(side="right")
         self._atualizar_periodo()
 
@@ -595,19 +596,27 @@ class DialogoBusca(Modal):
             self.l_destino.config(text=aviso_dest, style="Erro.TLabel" if aviso_dest.startswith("⚠") else "Muted.TLabel")
             self.l_destino.pack(anchor="w", pady=(8, 0))
         for w in self.f_botoes.winfo_children():
-            if w not in (self.b_gravar, self.b_csv, self.b_copiar, self.b_pasta):
+            if w not in (self.b_gravar, self.b_csv, self.b_copiar, self.b_pasta, self.b_avancado):
                 continue
             w.pack_forget()
         if emp["acao"] != "calcular":
             self.b_gravar.config(state="normal" if arquivos and self.resultado["destino_ok"] else "disabled")
             self.b_gravar.pack(side="left")
             self.b_pasta.pack(side="left", padx=(8, 0))
+        if emp["acao"] != "baixar" and arquivos:
+            self.b_avancado.pack(side="left", padx=(8, 0))
         if emp["acao"] != "baixar":
             self.b_copiar.pack(side="left", padx=(8, 0))
             self.b_csv.pack(side="left", padx=(8, 0))
         self.f_botoes.pack(fill="x", pady=(12, 0))
         self.update_idletasks()
         centralizar(self, self.pai.winfo_toplevel())
+
+    def _avancado(self):
+        if not self.resultado or not self.resultado["arquivos"]:
+            return
+        from .avancado import DialogoAvancado
+        DialogoAvancado(self, self.store, self.emp, self.resultado)
 
     def _escolher_pasta(self):
         if not self.resultado:

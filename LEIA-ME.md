@@ -28,6 +28,19 @@ Programa **gratuito** para Windows que baixa as **NFS-e Nacional** (emitidas e r
 
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
 
+## Informações avançadas (gráfico e comparativo de regimes)
+Depois de buscar as notas, clique em **Informações avançadas**:
+- **Gráfico de pizza** do período, com legenda ao lado. Dá para ver por cliente/fornecedor, por tipo de serviço
+  (itens da Lei Complementar 116, lidos do código de tributação da própria nota) ou prestado × tomado.
+- **Comparativo de regimes**: quanto a empresa pagaria no período no Simples Nacional, Lucro Presumido e Lucro Real, e um
+  cenário ilustrativo da reforma (IBS/CBS) em 2027 e 2033.
+- Na primeira vez o programa pede os dados fiscais da empresa (regime, receita e folha dos últimos 12 meses etc.). Eles ficam salvos
+  só neste computador e, nas próximas vezes, aparecem para você confirmar.
+
+É uma **simulação estimada**: não considera retenções, benefícios, créditos reais, RAT/terceiros nem tributação de dividendos,
+e não substitui a análise de um contador. As alíquotas ficam em `adge_nf/regimes.py` (tabela `ALIQUOTAS`), com a data de referência;
+a CBS de 2027 é uma estimativa até o Senado fixar a alíquota oficial.
+
 ## Pasta de destino
 Se a pasta escolhida para a empresa não tiver a estrutura esperada (por exemplo, "Departamento Fiscal" no padrão Adge),
 o programa não trava: use **Escolher pasta...** na tela de resultado para indicar onde salvar os XMLs.

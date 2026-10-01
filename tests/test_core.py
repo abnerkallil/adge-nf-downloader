@@ -87,6 +87,14 @@ class Adn(unittest.TestCase):
             core.baixar_dfe(s, CNPJ, cancelar=lambda: True)
 
 
+class Servico(unittest.TestCase):
+    def test_codigo_de_tributacao_no_documento(self):
+        d = core.parse_documento(xml_nfse(c(1), emit_cnpj=CNPJ, ctrib="070201", xtrib="Execução de obra"))
+        self.assertEqual(d["servico_cod"], "070201")
+        self.assertEqual(d["servico_desc"], "Execução de obra")
+        self.assertEqual(core.parse_documento(xml_nfse(c(2)))["servico_cod"], "")
+
+
 class Plano(unittest.TestCase):
     def docs(self):
         eu = dict(emit_cnpj=CNPJ, emit_nome=NOME)

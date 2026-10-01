@@ -37,6 +37,7 @@ def empresa_padrao() -> dict:
         "acao": "ambos",              # ambos | calcular | baixar
         "relatorio": True, "planilha": False,
         "prefixo_prestado": "", "prefixo_tomado": "",
+        "fiscal": {},                 # dados da simulação de regimes (preenchidos em "Informações avançadas")
     }
 
 

@@ -162,6 +162,9 @@ def parse_documento(xml_texto) -> dict:
             "valor": _num(_txt(dps, "vServ")),
             "valor_liquido": _num(_txt(inf, "vLiq")),
             "iss": _num(_txt(inf, "vISSQN")),
+            "servico_cod": _txt(dps, "cTribNac"),                       # código de tributação nacional (começa pelo item da LC 116)
+            "servico_desc": _txt(inf, "xTribNac") or _txt(dps, "xDescServ"),
+            "iss_aliquota": _num(_txt(inf, "pAliqAplic") or _txt(dps, "pAliq")),
         }
     if re.search(r"evento|pedreg", _local(raiz.tag), re.I) or _achar(raiz, "chNFSe") is not None:
         return {"kind": "evento", "chave": _txt(raiz, "chNFSe"),

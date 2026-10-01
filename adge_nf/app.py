@@ -358,6 +358,7 @@ class DialogoBusca(Modal):
         self.cancelar_flag = False
         self.trabalhando = False
         self.resultado = None
+        self.pasta_manual = ""
         hoje = dt.date.today()
         self.ano = hoje.year
         self.v_mes = tk.StringVar(value=core.MESES_TELA[max(hoje.month - 2, 0)])  # padrão: mês anterior
@@ -447,6 +448,7 @@ class DialogoBusca(Modal):
         self.b_gravar = botao(self.f_botoes, "Baixar XMLs para a pasta", self._gravar, primario=True)
         self.b_csv = botao(self.f_botoes, "Exportar CSV...", self._exportar_csv)
         self.b_copiar = botao(self.f_botoes, "Copiar totais", self._copiar)
+        self.b_pasta = botao(self.f_botoes, "Escolher pasta...", self._escolher_pasta)
         botao(self.f_botoes, "Fechar", self._fechar).pack(side="right")
         self._atualizar_periodo()
 
@@ -551,12 +553,16 @@ class DialogoBusca(Modal):
     def _concluir(self, docs, cnpj):
         emp, ano, mes = self.consulta
         destino_prev, aviso_dest = None, ""
+        if self.pasta_manual:
+            emp = dict(emp, destino=self.pasta_manual, estrutura="direto")
         if emp["acao"] != "calcular":
             try:
+                if not str(emp["destino"]).strip():
+                    raise ErroAdge("Esta empresa não tem pasta de destino definida.")
                 destino_prev, trilha = core.resolver_destino(Path(emp["destino"]), emp["estrutura"], ano, mes, criar=False)
                 aviso_dest = "Destino: " + " \\ ".join([Path(emp["destino"]).name] + [n + (" (será criada)" if novo else "") for n, novo in trilha])
             except ErroAdge as e:
-                aviso_dest = f"⚠ {e}"
+                aviso_dest = f"⚠ {e} Use \"Escolher pasta...\" para indicar onde salvar os XMLs."
         arquivos, resumo, avisos = core.planejar(emp, docs, cnpj, ano, mes, destino_prev)
         self.resultado = {"emp": emp, "docs": docs, "cnpj": cnpj, "ano": ano, "mes": mes, "arquivos": arquivos,
                           "resumo": resumo, "avisos": avisos, "destino_ok": destino_prev is not None}
@@ -588,18 +594,31 @@ class DialogoBusca(Modal):
             self.l_destino.config(text=aviso_dest, style="Erro.TLabel" if aviso_dest.startswith("⚠") else "Muted.TLabel")
             self.l_destino.pack(anchor="w", pady=(8, 0))
         for w in self.f_botoes.winfo_children():
-            if w not in (self.b_gravar, self.b_csv, self.b_copiar):
+            if w not in (self.b_gravar, self.b_csv, self.b_copiar, self.b_pasta):
                 continue
             w.pack_forget()
         if emp["acao"] != "calcular":
             self.b_gravar.config(state="normal" if arquivos and self.resultado["destino_ok"] else "disabled")
             self.b_gravar.pack(side="left")
+            self.b_pasta.pack(side="left", padx=(8, 0))
         if emp["acao"] != "baixar":
             self.b_copiar.pack(side="left", padx=(8, 0))
             self.b_csv.pack(side="left", padx=(8, 0))
         self.f_botoes.pack(fill="x", pady=(12, 0))
         self.update_idletasks()
         centralizar(self, self.pai.winfo_toplevel())
+
+    def _escolher_pasta(self):
+        if not self.resultado:
+            return
+        base = self.pasta_manual or self.resultado["emp"].get("destino") or self.store.preferencias.get("raiz_padrao") or str(Path.home())
+        c = filedialog.askdirectory(parent=self, title="Escolha a pasta onde salvar os XMLs",
+                                    initialdir=base if Path(base).is_dir() else str(Path.home()))
+        if not c:
+            return
+        self.pasta_manual = os.path.normpath(c)
+        r = self.resultado
+        self._concluir(r["docs"], r["cnpj"])
 
     def _gravar(self):
         r = self.resultado
@@ -789,6 +808,28 @@ class DialogoAtualizacao(Modal):
 
 
 # ============================================================================= janela principal
+class AbaRolavel(ttk.Frame):
+    """Frame com barra de rolagem vertical: o conteúdo vai em `.corpo`."""
+
+    def __init__(self, pai, **kw):
+        super().__init__(pai, **kw)
+        self.tela = tk.Canvas(self, bg=BRANCO, highlightthickness=0, borderwidth=0)
+        self.barra = ttk.Scrollbar(self, orient="vertical", command=self.tela.yview)
+        self.tela.configure(yscrollcommand=self.barra.set)
+        self.barra.pack(side="right", fill="y")
+        self.tela.pack(side="left", fill="both", expand=True)
+        self.corpo = ttk.Frame(self.tela, padding=18)
+        self._id = self.tela.create_window((0, 0), window=self.corpo, anchor="nw")
+        self.corpo.bind("<Configure>", lambda e: self.tela.configure(scrollregion=self.tela.bbox("all")))
+        self.tela.bind("<Configure>", lambda e: self.tela.itemconfigure(self._id, width=e.width))
+        self.bind("<Enter>", lambda e: self.tela.bind_all("<MouseWheel>", self._roda))
+        self.bind("<Leave>", lambda e: self.tela.unbind_all("<MouseWheel>"))
+
+    def _roda(self, e):
+        if self.corpo.winfo_reqheight() > self.tela.winfo_height():
+            self.tela.yview_scroll(-1 if e.delta > 0 else 1, "units")
+
+
 class App(tk.Tk):
     def __init__(self, store: Armazenamento = None):
         super().__init__()
@@ -925,8 +966,9 @@ class App(tk.Tk):
 
     # ------------------------------------------------------------------ aba Configurações
     def _aba_config(self):
-        aba = ttk.Frame(self.abas, padding=18)
-        self.abas.add(aba, text="  Configurações  ")
+        rolavel = AbaRolavel(self.abas)
+        self.abas.add(rolavel, text="  Configurações  ")
+        aba = rolavel.corpo
         ttk.Label(aba, text="Configurações", style="Titulo.TLabel").pack(anchor="w")
 
         ttk.Label(aba, text="Segurança das senhas", style="Sec.TLabel").pack(anchor="w", pady=(14, 2))
@@ -956,6 +998,12 @@ class App(tk.Tk):
         botao(lin2, "Verificar agora", lambda: self._checar_atualizacao(manual=True)).pack(side="left")
         self.l_att = ttk.Label(lin2, text="", style="Muted.TLabel")
         self.l_att.pack(side="left", padx=10)
+
+        ttk.Label(aba, text="Dados salvos", style="Sec.TLabel").pack(anchor="w", pady=(18, 2))
+        ttk.Label(aba, style="Muted.TLabel", wraplength=720, justify="left",
+                  text="Desinstalar o programa não apaga as empresas, os certificados e as senhas salvos neste computador. "
+                       "Se quiser removê-los (por exemplo, em um computador compartilhado), use o botão abaixo antes de desinstalar.").pack(anchor="w")
+        botao(aba, "Apagar todos os meus dados salvos...", self._apagar_dados).pack(anchor="w", pady=(6, 0))
 
         ttk.Label(aba, text="Sobre", style="Sec.TLabel").pack(anchor="w", pady=(18, 2))
         ttk.Label(aba, justify="left", style="Muted.TLabel", wraplength=760,
@@ -991,6 +1039,25 @@ class App(tk.Tk):
         except ErroAdge as e:
             messagebox.showerror(NOME_APP, str(e), parent=self)
         self._atualizar_seguranca()
+
+    def _apagar_dados(self):
+        n = len(self.store.empresas)
+        if not messagebox.askyesno(
+                NOME_APP, f"Isso apaga PARA SEMPRE, só neste computador:\n\n• as {n} empresa(s) salva(s);\n"
+                          "• as senhas dos certificados;\n• a chave de proteção no Cofre do Windows;\n• as preferências do app.\n\n"
+                          "Os certificados (.pfx) e os XMLs já baixados NÃO são apagados.\n\nDeseja continuar?",
+                icon="warning", default="no", parent=self):
+            return
+        if not messagebox.askyesno(NOME_APP, "Confirma apagar tudo? Esta ação não pode ser desfeita.", icon="warning",
+                                   default="no", parent=self):
+            return
+        try:
+            self.store.apagar_tudo()
+        except ErroAdge as e:
+            messagebox.showerror(NOME_APP, str(e), parent=self)
+            return
+        messagebox.showinfo(NOME_APP, "Dados apagados. O programa será fechado.", parent=self)
+        self.destroy()
 
     def _escolher_raiz(self):
         c = filedialog.askdirectory(parent=self, title="Escolha a pasta padrão", initialdir=self.v_raiz.get() or str(Path.home()))

@@ -20,12 +20,14 @@ A.messagebox.showerror = lambda *a, **k: mensagens.append(("erro", a))
 A.messagebox.showwarning = lambda *a, **k: mensagens.append(("aviso", a))
 A.messagebox.askyesno = lambda *a, **k: (mensagens.append(("pergunta", a)) or True)
 A.abrir_pasta = lambda *_: None
+A.messagebox.showinfo = lambda *a, **k: mensagens.append(("info", a))
 
 
 class CofreFalso:
     d = {}
     def get_password(self, s, u): return self.d.get((s, u))
     def set_password(self, s, u, p): self.d[(s, u)] = p
+    def delete_password(self, s, u): self.d.pop((s, u), None)
 
 
 def esperar(cond, app, segundos=10):
@@ -109,6 +111,25 @@ def principal():
         b2.destroy()
         passo("modo só calcular")
 
+        # --- pasta fora do padrão Adge: não trava, deixa escolher outra pasta
+        (t / "cliente_sem_padrao").mkdir()
+        emp3 = dict(emp, estrutura="adge", destino=str(t / "cliente_sem_padrao"))
+        b3 = A.DialogoBusca(app, store, emp3, sessao=sessao)
+        b3.v_mes.set("Setembro"); b3.ano = 2026
+        b3._buscar()
+        assert esperar(lambda: b3.resultado is not None, app)
+        assert str(b3.b_gravar.cget("state")) == "disabled"
+        assert "Escolher pasta" in b3.l_destino.cget("text"), b3.l_destino.cget("text")
+        assert b3.b_pasta.winfo_ismapped()
+        (t / "livre").mkdir()
+        A.filedialog.askdirectory = lambda **k: str(t / "livre")
+        b3._escolher_pasta()
+        assert str(b3.b_gravar.cget("state")) == "normal"
+        b3._gravar()
+        assert len(list((t / "livre").iterdir())) == 4, list((t / "livre").iterdir())
+        b3.destroy()
+        passo("pasta fora do padrão Adge permite escolher outra pasta")
+
         # --- erro do ADN aparece sem travar
         class Ruim:
             def get(self, *a, **k):
@@ -191,8 +212,11 @@ def principal():
         app._atualizar_seguranca()
         assert "senha mestra" in app.l_seg.cget("text").lower()
         passo("configurações")
-        b.destroy()
-        app.destroy()
+        # a aba de configurações tem rolagem e botão de apagar dados
+        assert any(isinstance(w, A.AbaRolavel) for w in app.abas.winfo_children())
+        app._apagar_dados()
+        assert store.empresas == [] and not (t / "dados" / "empresas.json").exists()
+        passo("apagar todos os dados")  # o app fecha sozinho depois de apagar
 
 
 try:

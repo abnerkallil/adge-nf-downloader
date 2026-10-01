@@ -1,5 +1,7 @@
 # Pasta onde ficam os arquivos antigos (extensão do Chrome, programa local, cópias): não vai para o GitHub
 _antigo/
+# Etapas de publicação (cópias de cada versão): não vão para o GitHub
+_etapas/
 
 # Segurança: nunca enviar certificados nem dados das empresas
 *.pfx

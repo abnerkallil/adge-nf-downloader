@@ -432,7 +432,7 @@ def gerar_csv(arquivos, resumo) -> str:
         d = a["doc"]
         w.writerow([CATEGORIAS[a["cat"]]["relatorio"], d["numero"], d["emissao"], d["emitente_nome"], d["emitente_doc"],
                     d["tomador_nome"], d["tomador_doc"], br(d["valor"]), br(d["valor_liquido"]), br(d["iss"]), d["chave"]])
-    return "﻿" + buf.getvalue()
+    return "\ufeff" + buf.getvalue()
 
 
 # ----------------------------------------------------------------------------- fluxo completo

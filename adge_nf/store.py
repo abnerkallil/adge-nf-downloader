@@ -32,7 +32,7 @@ def pasta_dados() -> Path:
 def empresa_padrao() -> dict:
     return {
         "id": uuid.uuid4().hex[:12], "nome": "", "cnpj": "", "pfx": "", "senha_cifrada": "",
-        "destino": "", "estrutura": "adge",
+        "destino": "", "estrutura": "ano_mes",
         "tipos": {"prestado": True, "tomado": True}, "nfe": False,
         "acao": "ambos",              # ambos | calcular | baixar
         "relatorio": True, "csv": False,
@@ -161,6 +161,24 @@ class Armazenamento:
 
     def obter(self, id_: str) -> dict:
         return next(e for e in self.empresas if e["id"] == id_)
+
+    def apagar_tudo(self):
+        """Apaga empresas, preferências e a chave do Cofre do Windows. Não toca nos certificados nem nos XMLs."""
+        try:
+            self._kr().delete_password(SERVICO_COFRE, USUARIO_COFRE)
+        except ErroAdge:
+            pass
+        except Exception:
+            pass  # chave já inexistente: segue
+        for f in (self.arquivo, self.arquivo.with_suffix(".tmp"), self.pasta / "empresas.corrompido.json"):
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                raise ErroAdge(f"Não consegui apagar {f.name}: {e}") from e
+        self._fernet = None
+        self.dados = {"versao": 1, "seguranca": {"modo": "cofre"}, "empresas": [], "preferencias": {}}
 
     def salvar_empresa(self, emp: dict, senha: str = None):
         """`senha`: None mantém a salva; "" apaga; texto novo cifra."""

@@ -26,6 +26,9 @@ class CofreFalso:
     def set_password(self, s, u, p):
         self.d[(s, u)] = p
 
+    def delete_password(self, s, u):
+        self.d.pop((s, u))
+
 
 def gerar_pfx(caminho, senha="segredo", cn="EMPRESA TESTE LTDA:11222333000181", dias=365):
     chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -120,6 +123,23 @@ class Armazenamento_(unittest.TestCase):
             self.assertEqual([x["nome"] for x in a.empresas], ["alfa", "Zeta"])
             a.excluir_empresa(a.empresas[0]["id"])
             self.assertEqual(len(a.empresas), 1)
+
+    def test_apagar_tudo(self):
+        with tempfile.TemporaryDirectory() as t:
+            kr = CofreFalso()
+            a = self.novo(t, kr)
+            e = empresa_padrao(); e["nome"] = "X"; a.salvar_empresa(e, "abc")
+            a.preferencias["raiz_padrao"] = "C:\\x"; a.salvar()
+            self.assertTrue(kr.d)
+            a.apagar_tudo()
+            self.assertEqual(kr.d, {})
+            self.assertFalse((pathlib.Path(t) / "empresas.json").exists())
+            self.assertEqual(a.empresas, [])
+            a.apagar_tudo()                              # repetir não pode falhar
+            self.assertEqual(self.novo(t, CofreFalso()).empresas, [])
+
+    def test_empresa_nova_nao_usa_estrutura_adge(self):
+        self.assertEqual(empresa_padrao()["estrutura"], "ano_mes")
 
     def test_arquivo_corrompido_nao_derruba(self):
         with tempfile.TemporaryDirectory() as t:

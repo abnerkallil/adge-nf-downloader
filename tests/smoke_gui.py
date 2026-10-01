@@ -307,7 +307,7 @@ def principal():
         todo = " ".join(w.cget("text") for w in d.winfo_children() if hasattr(w, "cget") and "text" in w.keys())
         assert "sem fins lucrativos" in todo and "Avaliar no GitHub" in [b.cget("text") for b in (d.b_github, d.b_google, d.b_site)]
         d.b_github.invoke(); d.b_google.invoke()
-        assert any("github.com" in u for u in abertos_url) and any("maps.app.goo.gl" in u for u in abertos_url), abertos_url
+        assert any("github.com" in u for u in abertos_url) and any("share.google/d9zzh3PZHLl5LCvF2" in u for u in abertos_url), abertos_url
         d.b_ok.invoke()
         assert store.preferencias["boas_vindas_vista"] is True and not A.boas_vindas_pendente(store.preferencias)
         assert app.b_apresentacao.cget("text") == "Ver a apresentação do projeto"

@@ -18,6 +18,12 @@ def c(n):
     return str(n) * 50
 
 
+class Parse(unittest.TestCase):
+    def test_regime_do_prestador(self):
+        self.assertEqual(core.parse_documento(xml_nfse(c(1), simples="3"))["emitente_simples"], "3")
+        self.assertEqual(core.parse_documento(xml_nfse(c(1)))["emitente_simples"], "")
+
+
 class Nomes(unittest.TestCase):
     def test_padrao_adge(self):
         d = core.parse_documento(xml_nfse(c(1), emit_nome="PRESTADOR EXEMPLO LTDA", toma_nome="CLIENTE EXEMPLO LTDA",

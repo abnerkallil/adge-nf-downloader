@@ -43,3 +43,4 @@ Os testes (`tests/test_docs.py`) conferem o formato, os códigos e se existe rel
 | ITEM-23 | Validade do certificado |
 | ITEM-24 | Sobre o projeto e contato com a Adge |
 | ITEM-25 | Mensagens e janelas de aviso |
+| ITEM-26 | Créditos das notas tomadas |

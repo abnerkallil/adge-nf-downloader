@@ -15,8 +15,9 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
   em verde quando positivo e vermelho quando negativo.
 - Organização automática dos arquivos em pastas por cliente, ano e mês, com nomes padronizados.
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.
-- **Informações avançadas**: gráfico de pizza e comparativo entre Simples Nacional, Lucro Presumido, Lucro Real
-  e cenários da reforma tributária (IBS/CBS).
+- **Informações avançadas**: gráfico de pizza e comparativo de regimes adequado ao enquadramento da empresa
+  (Simples: DAS unificado × regime regular de IBS/CBS; Presumido e Real: um contra o outro, hoje e com a reforma),
+  com estimativa de créditos das notas tomadas.
 - Cadastro de várias empresas em **cartões**, com senhas protegidas no Cofre do Windows e aviso de validade do certificado.
 - **Histórico** das últimas consultas, com reabertura em um clique.
 - Visual claro ou **modo escuro**, com menu lateral e telas que se ajustam ao tamanho da janela.
@@ -62,8 +63,14 @@ Arquivos existentes nunca são sobrescritos: se já houver uma planilha com o me
 Depois de buscar as notas, o botão **Informações avançadas** abre:
 - **Gráfico de pizza** do período, com legenda ao lado. Pode ser visto por cliente/fornecedor, por tipo de serviço
   (itens da Lei Complementar 116, lidos do código de tributação da própria nota) ou por prestado × tomado.
-- **Comparativo de regimes**: estimativa do que a empresa pagaria no período no Simples Nacional, no Lucro Presumido
-  e no Lucro Real, além de um cenário ilustrativo da reforma tributária (IBS/CBS) em 2027 e 2033.
+- **Comparativo de regimes**, sempre dentro do que faz sentido para a empresa:
+  - **Simples Nacional**: manter o DAS unificado (IBS/CBS dentro do DAS) ou optar pelo regime regular de IBS/CBS
+    (LC 214/2025, art. 41 §3º), em 2027 e em 2033. Lucro Presumido e Lucro Real só aparecem se a receita passar do limite do Simples.
+  - **Lucro Presumido e Lucro Real**: um contra o outro hoje, em 2027 (CBS e IBS em transição) e em 2033 (IBS/CBS pleno).
+    O Simples não é oferecido.
+- **Créditos das notas tomadas**: estimados pelo item da LC 116 do serviço e pelo regime do fornecedor (a NFS-e não traz CFOP,
+  que existe na NF-e de mercadorias), e usados no cálculo do Lucro Real e do IBS/CBS. Mostra também quanto do faturamento
+  foi para clientes com CNPJ, que podem aproveitar crédito.
 
 Na primeira vez, o programa solicita os dados fiscais da empresa (regime atual, receita e folha dos últimos 12 meses,
 entre outros). Eles ficam salvos apenas no computador e, nas consultas seguintes, são exibidos para confirmação.
@@ -144,18 +151,6 @@ python setup.py bdist_msi                                 # gera o MSI (somente 
 Cada função do programa tem um código fixo (`ITEM-NN`), listado em `adge_nf/itens.py`. Cada versão tem um relatório em
 `docs/atualizacoes/vX.Y.Z.md` (veja `docs/atualizacoes/README.md` para o formato). A seção **Resumo** vira o texto do aviso de
 atualização do programa e o arquivo inteiro vira o texto da Release. Os testes conferem o formato e os códigos.
-
-### Publicar uma versão nova
-O MSI é gerado pelo GitHub Actions (`.github/workflows/build.yml`) sempre que uma tag `vX.Y.Z` é enviada ao repositório:
-1. Escrever o relatório `docs/atualizacoes/vX.Y.Z.md` (e registrar códigos novos em `adge_nf/itens.py`).
-2. Fazer o commit e criar a tag da versão (sempre `vX.Y.Z`, com o "v", e maior que a anterior).
-3. Enviar (push) o commit e a tag.
-4. O fluxo ajusta a versão pela tag, roda os testes, gera o `.msi` e o `.msi.sha256`, e anexa os dois à Release,
-   usando o relatório da versão como texto.
-5. Conferir se a nova Release está marcada como **Latest**, pois é ela que o atualizador consulta.
-
-O `REPO_GITHUB` em `adge_nf/__init__.py` aponta para o repositório consultado (vazio = sem verificação de versão).
-O `UpgradeCode` em `setup.py` nunca deve mudar: é ele que faz o instalador novo substituir o antigo.
 
 ## Licença
 MIT.

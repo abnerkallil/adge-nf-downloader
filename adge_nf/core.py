@@ -157,6 +157,7 @@ def parse_documento(xml_texto) -> dict:
             "competencia": _txt(dps, "dCompet"),
             "emitente_doc": _txt(emit, "CNPJ") or _txt(emit, "CPF"),
             "emitente_nome": _txt(emit, "xNome"),
+            "emitente_simples": _txt(dps, "opSimpNac"),                  # 1 não optante, 2 MEI, 3 ME/EPP optante do Simples
             "tomador_doc": _txt(toma, "CNPJ") or _txt(toma, "CPF"),
             "tomador_nome": _txt(toma, "xNome"),
             "valor": _num(_txt(dps, "vServ")),

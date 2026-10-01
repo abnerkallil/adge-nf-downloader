@@ -197,8 +197,9 @@ def principal():
         import tkinter as tk
         varre(av.f_comp)
         junto = " ".join(txt)
-        assert "Simples Nacional" in junto and "Lucro Real" in junto and "IBS/CBS" in junto, junto[:400]
-        assert "Mais econômico" in junto
+        assert "Lucro Presumido" in junto and "Lucro Real" in junto and "IBS/CBS" in junto, junto[:400]
+        assert "Simples Nacional" not in junto, "empresa do Presumido não deve ver análise do Simples"
+        assert "Mais econômico" in junto and "Créditos considerados" in junto
         passo("informações avançadas: pizza, dados fiscais e comparativo")
         av.destroy()
 

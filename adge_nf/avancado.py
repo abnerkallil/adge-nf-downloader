@@ -3,7 +3,7 @@ import math
 import tkinter as tk
 from tkinter import ttk
 
-from . import NOME_APP, SITE_ADGE, core, grafico, regimes
+from . import NOME_APP, SITE_ADGE, core, credito, grafico, regimes
 from . import ui
 from .core import ErroAdge
 from .ui import P, Botao, Cartao, Chip, Interruptor, Modal, Rolavel, F, px, rotulo
@@ -327,53 +327,79 @@ class DialogoAvancado(Modal):
                                 "para ver quanto ela pagaria em cada regime.", 10, cor="suave", largura=px(900)).pack(anchor="w")
             Botao(self.f_comp, "Informar dados fiscais", self._editar_dados, estilo="primario").pack(anchor="w", pady=(10, 0))
             return
-        res = regimes.comparar(self.faturamento, self.tomados, f)
+        cred = credito.estimar(self.r["arquivos"])
+        pj = credito.participacao_pj(self.r["arquivos"])
+        res = regimes.comparar(self.faturamento, self.tomados, f, cred["pis_cofins"], cred["ibs_cbs"], pj)
+        self.res = res
         cen = {c["chave"]: c for c in res["cenarios"]}
-        atual, melhor = cen[res["atual"]], cen.get(res["melhor"])
+        atual = cen.get(res["atual"])
         resumo = Cartao(self.f_comp, fundo="verde_claro", borda="verde_claro")
         resumo.pack(fill="x")
         c = resumo.corpo
         rotulo(c, f"Faturamento do período: R$ {num_br(self.faturamento)} · notas tomadas: R$ {num_br(self.tomados)}",
                11, "bold", "verde_escuro").pack(anchor="w")
-        if atual["elegivel"]:
-            rotulo(c, f"Hoje, em {atual['nome']}: R$ {num_br(atual['total'])} ({pct(atual['efetiva'])} do faturamento).",
+        if res["grupo"] == "simples":
+            comp = "Comparação para quem está no Simples Nacional: DAS unificado × opção pelo regime regular de IBS/CBS."
+        else:
+            comp = "Comparação entre Lucro Presumido e Lucro Real, hoje e com a reforma tributária."
+        rotulo(c, comp, 10, cor="verde_escuro", largura=px(860)).pack(anchor="w", pady=(4, 0))
+        if atual and atual["elegivel"]:
+            rotulo(c, f"Hoje, em {regimes.NOMES.get(f.get('regime'), '')}: R$ {num_br(atual['total'])} ({pct(atual['efetiva'])} do faturamento).",
                    10, cor="verde_escuro").pack(anchor="w", pady=(4, 0))
-        if melhor and atual["elegivel"]:
-            if melhor["chave"] == atual["chave"]:
-                msg = "Entre os regimes simulados, o seu atual é o mais econômico neste período."
-            else:
-                dif = atual["total"] - melhor["total"]
-                msg = (f"Mais econômico neste período: {melhor['nome']}, com R$ {num_br(melhor['total'])} "
-                       f"(diferença de R$ {num_br(dif)} no mês, cerca de R$ {num_br(dif * 12)} por ano).")
+        s1 = res["secoes"][0]
+        if s1["melhor"]:
+            ordem = sorted((cen[k] for k in s1["chaves"] if cen[k]["elegivel"]), key=lambda x: x["total"])
+            dif = ordem[1]["total"] - ordem[0]["total"]
+            msg = (f"Neste período, {ordem[0]['nome']} é a opção mais econômica: R$ {num_br(dif)} a menos no mês "
+                   f"(cerca de R$ {num_br(dif * 12)} por ano) que {ordem[1]['nome']}.")
             rotulo(c, msg, 10, "bold", "verde_escuro", largura=px(860)).pack(anchor="w", pady=(4, 0))
-        for a in res["avisos"]:
-            rotulo(self.f_comp, "⚠ " + a, 10, cor="erro", largura=px(900)).pack(anchor="w", pady=(6, 0))
-        self._barras(res, cen)
-        rotulo(self.f_comp, "Hoje", 12, "bold", "verde_escuro").pack(anchor="w", pady=(14, 6))
-        linha1 = tk.Frame(self.f_comp, bg=P.fundo)
-        linha1.pack(fill="x")
-        for i, ch in enumerate(("simples", "presumido", "real")):
-            self._cartao(linha1, i, cen[ch], ch == res["atual"], ch == res["melhor"])
-        rotulo(self.f_comp, "Reforma tributária (IBS e CBS) — simulação ilustrativa", 12, "bold", "verde_escuro").pack(anchor="w", pady=(16, 6))
-        linha2 = tk.Frame(self.f_comp, bg=P.fundo)
-        linha2.pack(fill="x")
-        for i, ch in enumerate(("reforma2027", "reforma2033")):
-            self._cartao(linha2, i, cen[ch], False, False)
-        Botao(self.f_comp, "Editar dados fiscais", self._editar_dados).pack(anchor="w", pady=(14, 0))
+        for a_ in res["avisos"]:
+            rotulo(self.f_comp, "⚠ " + a_, 10, cor="erro", largura=px(900)).pack(anchor="w", pady=(6, 0))
+        for i_ in res["insights"]:
+            rotulo(self.f_comp, "• " + i_, 10, cor="suave", largura=px(900)).pack(anchor="w", pady=(4, 0))
+        for sec in res["secoes"]:
+            rotulo(self.f_comp, sec["titulo"], 12, "bold", "verde_escuro").pack(anchor="w", pady=(16, 0))
+            rotulo(self.f_comp, sec["nota"], 9, cor="suave").pack(anchor="w", pady=(0, 6))
+            self._barras(sec, cen)
+            linha = tk.Frame(self.f_comp, bg=P.fundo)
+            linha.pack(fill="x", pady=(8, 0))
+            for i, ch in enumerate(sec["chaves"]):
+                self._cartao(linha, i, cen[ch], ch == sec["atual"], ch == sec["melhor"])
+        self._creditos(cred)
+        Botao(self.f_comp, "Editar dados fiscais", self._editar_dados).pack(anchor="w", pady=(16, 0))
 
-    def _barras(self, res, cen):
-        """Barras horizontais com o total de cada regime elegível: dá para comparar de relance."""
-        elegiveis = [cen[k] for k in ("simples", "presumido", "real") if cen[k]["elegivel"]]
+    def _creditos(self, cred):
+        if not cred["linhas"]:
+            return
+        rotulo(self.f_comp, "Créditos considerados nas notas tomadas", 12, "bold", "verde_escuro").pack(anchor="w", pady=(16, 0))
+        rotulo(self.f_comp, "Estimados pelo item da LC 116 do serviço e pelo regime do fornecedor (a NFS-e não traz CFOP). "
+                            "O direito ao crédito depende do uso do serviço na atividade: confirme com o contador.",
+               9, cor="suave", largura=px(900)).pack(anchor="w", pady=(0, 6))
+        cartao = Cartao(self.f_comp, pad=12)
+        cartao.pack(fill="x")
+        g = cartao.corpo
+        g.columnconfigure(0, weight=1)
+        for i, (rot, valor, qtd) in enumerate(cred["linhas"]):
+            rotulo(g, f"{rot} ({qtd} nota(s))", 10).grid(row=i, column=0, sticky="w", pady=2)
+            rotulo(g, "R$ " + num_br(valor), 10, "bold", anchor="e").grid(row=i, column=1, sticky="e")
+        n = len(cred["linhas"])
+        if cred["de_simples"]:
+            rotulo(g, f"R$ {num_br(cred['de_simples'])} vieram de fornecedores do Simples, cujo crédito de IBS/CBS é reduzido.",
+                   9, cor="suave", largura=px(820)).grid(row=n, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+    def _barras(self, sec, cen):
+        """Barras horizontais com o total de cada opção da seção: dá para comparar de relance."""
+        elegiveis = [cen[k] for k in sec["chaves"] if cen[k]["elegivel"]]
         if len(elegiveis) < 2:
             return
         maior = max(c["total"] for c in elegiveis) or 1.0
         cartao = Cartao(self.f_comp, pad=14)
-        cartao.pack(fill="x", pady=(10, 0))
+        cartao.pack(fill="x")
         g = cartao.corpo
         g.columnconfigure(1, weight=1)
         for i, c in enumerate(elegiveis):
-            melhor, atual = c["chave"] == res["melhor"], c["chave"] == res["atual"]
-            rotulo(g, c["nome"], 10, "bold" if atual else "normal").grid(row=i, column=0, sticky="w", pady=5, padx=(0, 14))
+            melhor, atual = c["chave"] == sec["melhor"], c["chave"] == sec["atual"]
+            rotulo(g, c["nome"], 10, "bold" if atual else "normal", largura=px(300)).grid(row=i, column=0, sticky="w", pady=5, padx=(0, 14))
             barra = tk.Canvas(g, height=px(16), bg=P.superficie, highlightthickness=0, bd=0)
             barra.grid(row=i, column=1, sticky="ew", pady=5)
 
@@ -396,24 +422,24 @@ class DialogoAvancado(Modal):
         card = Cartao(pai, borda="verde" if atual else None, pad=14)
         card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 8, 0))
         corpo = card.corpo
-        rotulo(corpo, c["nome"], 11, "bold", "verde_escuro", largura=px(250)).pack(anchor="w")
+        rotulo(corpo, c["nome"], 11, "bold", "verde_escuro", largura=px(440)).pack(anchor="w")
         tags = tk.Frame(corpo, bg=P.superficie)
         if atual:
-            Chip(tags, "Seu regime hoje", "verde").pack(side="left", padx=(0, 4))
+            Chip(tags, "Seu regime", "verde").pack(side="left", padx=(0, 4))
         if melhor:
             Chip(tags, "Mais econômico", "azul").pack(side="left")
         if atual or melhor:
             tags.pack(anchor="w", pady=(4, 0))
         if not c["elegivel"]:
-            rotulo(corpo, c["motivo"], 9, cor="suave", largura=px(250)).pack(anchor="w", pady=(8, 0))
+            rotulo(corpo, c["motivo"], 9, cor="suave", largura=px(440)).pack(anchor="w", pady=(8, 0))
             return
         rotulo(corpo, "R$ " + num_br(c["total"]), 18, "bold").pack(anchor="w", pady=(6, 0))
         rotulo(corpo, f"{pct(c['efetiva'])} do faturamento", 9, cor="suave").pack(anchor="w")
         tabela = tk.Frame(corpo, bg=P.superficie)
         tabela.pack(fill="x", pady=(8, 0))
         for i, (nome, valor) in enumerate(c["itens"]):
-            rotulo(tabela, nome, 9, largura=px(170)).grid(row=i, column=0, sticky="w", pady=1)
+            rotulo(tabela, nome, 9, largura=px(300)).grid(row=i, column=0, sticky="w", pady=1)
             rotulo(tabela, "R$ " + num_br(valor), 9, anchor="e").grid(row=i, column=1, sticky="e", padx=(8, 0))
         tabela.columnconfigure(0, weight=1)
         for o in c.get("obs", []):
-            rotulo(corpo, "• " + o, 8, cor="suave", largura=px(250)).pack(anchor="w", pady=(4, 0))
+            rotulo(corpo, "• " + o, 8, cor="suave", largura=px(440)).pack(anchor="w", pady=(4, 0))

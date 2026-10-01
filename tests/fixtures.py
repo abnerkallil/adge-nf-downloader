@@ -4,12 +4,13 @@ import gzip
 
 
 def xml_nfse(chave, emit_cnpj="11111111000111", emit_nome="EMPRESA TESTE LTDA", toma_cnpj="22222222000122",
-             toma_nome="CLIENTE EXEMPLO LTDA", valor="100.00", dh="2026-09-10T10:00:00-03:00", num="1", ctrib="", xtrib=""):
+             toma_nome="CLIENTE EXEMPLO LTDA", valor="100.00", dh="2026-09-10T10:00:00-03:00", num="1", ctrib="", xtrib="", simples=""):
     return (f'<?xml version="1.0" encoding="utf-8"?><NFSe versao="1.01" xmlns="http://www.sped.fazenda.gov.br/nfse">'
             f'<infNFSe Id="NFS{chave}"><nNFSe>{num}</nNFSe><dhProc>{dh}</dhProc>'
             f'<xTribNac>{xtrib}</xTribNac>'
             f'<emit><CNPJ>{emit_cnpj}</CNPJ><xNome>{emit_nome}</xNome></emit><valores><vLiq>{valor}</vLiq></valores>'
             f'<DPS versao="1.01"><infDPS Id="DPS1"><dhEmi>{dh}</dhEmi><dCompet>{dh[:10]}</dCompet>'
+            f'<prest>' + (f'<regTrib><opSimpNac>{simples}</opSimpNac></regTrib>' if simples else '') + '</prest>'
             f'<toma><CNPJ>{toma_cnpj}</CNPJ><xNome>{toma_nome}</xNome></toma>'
             f'<serv><cServ><cTribNac>{ctrib}</cTribNac></cServ></serv>'
             f'<valores><vServPrest><vServ>{valor}</vServ></vServPrest></valores></infDPS></DPS></infNFSe></NFSe>')

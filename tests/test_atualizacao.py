@@ -80,6 +80,52 @@ class Consulta(unittest.TestCase):
         self.assertIsNone(A.consultar(Sessao(release()), repo="", versao="1.0.0"))
 
 
+CORPO = "## Resumo\n- [NOVO] {n} ({c}): {t}\n\n## Detalhes\n"
+
+
+class SessaoLista(Sessao):
+    """Além da última Release, devolve a lista de Releases (para quem pulou versões)."""
+    def __init__(self, lista, **k):
+        super().__init__(**k)
+        self.lista = lista
+
+    def get(self, url, **k):
+        if url.endswith("/releases"):
+            self.urls.append(url)
+            return Resp(200, self.lista)
+        return super().get(url, **k)
+
+
+class Novidades(unittest.TestCase):
+    def test_junta_as_versoes_puladas_da_mais_nova_para_a_mais_antiga(self):
+        r = release("v1.3.3")
+        r["body"] = CORPO.format(n="Boas-vindas da primeira abertura", c="ITEM-19", t="cartão")
+        lista = [
+            {"tag_name": "v1.3.3", "body": r["body"]},
+            {"tag_name": "v1.3.2", "body": CORPO.format(n="Novidades no aviso de atualização", c="ITEM-18", t="resumo")},
+            {"tag_name": "v1.3.1", "body": "notas automáticas sem resumo"},
+            {"tag_name": "v1.2.0", "body": CORPO.format(n="Planilha Excel", c="ITEM-09", t="velha"), "draft": False},
+            {"tag_name": "v1.4.0-beta", "body": CORPO.format(n="X", c="ITEM-01", t="x"), "prerelease": True},
+        ]
+        i = A.consultar(SessaoLista(lista, release=r), repo=REPO, versao="1.3.1")
+        self.assertEqual([v["tag"] for v in i["versoes"]], ["v1.3.3", "v1.3.2"])
+        self.assertEqual(i["versoes"][1]["itens"][0]["codigo"], "ITEM-18")
+        self.assertTrue(i["relatorio_url"].endswith("/tree/v1.3.3/docs/atualizacoes"))
+
+    def test_uma_versao_so_aponta_para_o_arquivo(self):
+        r = release("v1.3.2")
+        r["body"] = CORPO.format(n="Planilha Excel", c="ITEM-09", t="ok")
+        i = A.consultar(Sessao(r), repo=REPO, versao="1.3.1")  # sem lista: a sessão devolve lixo e isso é ignorado
+        self.assertEqual([v["tag"] for v in i["versoes"]], ["v1.3.2"])
+        self.assertTrue(i["relatorio_url"].endswith("/blob/v1.3.2/docs/atualizacoes/v1.3.2.md"))
+
+    def test_release_sem_resumo_cai_no_texto(self):
+        i = A.consultar(Sessao(release()), repo=REPO, versao="1.0.0")
+        self.assertEqual(i["versoes"], [])
+        self.assertNotIn("relatorio_url", i)
+        self.assertEqual(i["notas"], "Novidades: NF-e")
+
+
 class Preferencias(unittest.TestCase):
     def test_uma_consulta_por_dia(self):
         p, hoje = {}, dt.date(2026, 10, 1)

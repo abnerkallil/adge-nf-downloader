@@ -752,16 +752,24 @@ class DialogoAtualizacao(Modal):
     def _montar(self):
         ttk.Label(self, text="Nova versão disponível", style="Titulo.TLabel").pack(anchor="w")
         ttk.Label(self, text=f"{self.info['tag']}  (você está na v{VERSAO})", style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
-        ttk.Label(self, text="Novidades", style="Sec.TLabel").pack(anchor="w")
+        cab = ttk.Frame(self)
+        cab.pack(fill="x")
+        ttk.Label(cab, text="Novidades", style="Sec.TLabel").pack(side="left")
+        if self.info.get("relatorio_url"):
+            lk = tk.Label(cab, text="Ver relatório completo no GitHub", bg=BRANCO, fg=VERDE_ESC, cursor="hand2",
+                          font=("Segoe UI", 9, "underline"))
+            lk.pack(side="right")
+            lk.bind("<Button-1>", lambda *_: webbrowser.open(self.info["relatorio_url"]))
+            self.l_relatorio = lk
         caixa = ttk.Frame(self)
         caixa.pack(fill="both", expand=True, pady=(4, 0))
-        self.txt = tk.Text(caixa, width=70, height=9, wrap="word", bg=BRANCO, fg=TEXTO, relief="solid", bd=1,
+        self.txt = tk.Text(caixa, width=76, height=14, wrap="word", bg=BRANCO, fg=TEXTO, relief="solid", bd=1,
                            highlightthickness=0, font=FONTE, padx=8, pady=6)
         sb = ttk.Scrollbar(caixa, orient="vertical", command=self.txt.yview)
         self.txt.configure(yscrollcommand=sb.set)
         self.txt.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
-        self.txt.insert("1.0", self.info.get("notas") or "Esta versão não traz descrição das novidades.")
+        self._preencher_novidades()
         self.txt.config(state="disabled")
         self.l_status = ttk.Label(self, text="", style="Muted.TLabel", wraplength=520, justify="left")
         self.l_status.pack(anchor="w", pady=(10, 0))
@@ -783,6 +791,29 @@ class DialogoAtualizacao(Modal):
         self.b_depois.pack(side="left", padx=(8, 0))
         self.b_pular = botao(linha, "Pular esta versão", self._pular)
         self.b_pular.pack(side="right")
+
+    def _preencher_novidades(self):
+        """Mostra cada versão nova com seus itens no formato "Nome (ITEM-NN)"; sem resumo em itens, mostra o texto da Release."""
+        t = self.txt
+        t.tag_configure("versao", font=("Segoe UI Semibold", 11), foreground=VERDE_ESC, spacing1=8, spacing3=2)
+        t.tag_configure("item", font=("Segoe UI Semibold", 10))
+        t.tag_configure("codigo", foreground=CINZA, font=("Segoe UI", 9))
+        t.tag_configure("texto", lmargin1=16, lmargin2=16, spacing3=4)
+        cores = {"NOVO": VERDE_TEXTO, "MELHORIA": "#1D4ED8", "CORRECAO": VERMELHO_TEXTO}
+        for k, c in cores.items():
+            t.tag_configure("t_" + k, foreground=c, font=("Segoe UI Semibold", 9))
+        versoes = self.info.get("versoes") or []
+        if not versoes:
+            t.insert("1.0", self.info.get("notas") or "Esta versão não traz descrição das novidades.")
+            return
+        for i, v in enumerate(versoes):
+            t.insert("end", ("\n" if i else "") + f"Versão {v['tag'].lstrip('v')}\n", "versao")
+            for it in v["itens"]:
+                t.insert("end", "\u2022 ", "item")
+                t.insert("end", atualizacao.TIPOS[it["tipo"]].upper() + "  ", "t_" + it["tipo"])
+                t.insert("end", it["nome"], "item")
+                t.insert("end", f" ({it['codigo']})\n", "codigo")
+                t.insert("end", it["texto"] + "\n", "texto")
 
     # ------------------------------------------------------------------ escolhas
     def _salvar_prefs(self):

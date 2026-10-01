@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import REPO_GITHUB, VERSAO
 from .core import Cancelado, ErroAdge
+from .itens import PADRAO as _PADRAO_ITEM
 
 HEX64 = re.compile(r"\b([0-9a-fA-F]{64})\b")
 
@@ -38,6 +39,38 @@ def notas_legiveis(md: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(linhas)).strip()
 
 
+TIPOS = {"NOVO": "Novo", "MELHORIA": "Melhoria", "CORRECAO": "Correção"}
+_LINHA_ITEM = re.compile(r"^\s*[-*+]\s*\[([^\]]+)\]\s*(.+?)\s*\((ITEM-\d{2,3})\)\s*[:\-\u2013\u2014]\s*(.+?)\s*$")
+
+
+def _tipo(txt: str):
+    t = re.sub(r"[^A-Z]", "", txt.upper().replace("\u00c7", "C").replace("\u00c3", "A"))
+    return t if t in TIPOS else None
+
+
+def extrair_itens(md: str) -> list:
+    """Lê a seção "## Resumo" do relatório da versão (docs/atualizacoes/vX.Y.Z.md).
+    Cada linha: `- [NOVO] Nome do item (ITEM-NN): o que mudou.` Tipos: NOVO, MELHORIA, CORREÇÃO."""
+    itens, dentro = [], False
+    for l in (md or "").replace("\r", "").split("\n"):
+        if re.match(r"^\s{0,3}##\s+", l):
+            dentro = bool(re.match(r"^\s{0,3}##\s+resumo\b", l, re.I))
+            continue
+        if not dentro:
+            continue
+        m = _LINHA_ITEM.match(l)
+        if m and _tipo(m[1]) and _PADRAO_ITEM.match(m[3]):
+            itens.append({"tipo": _tipo(m[1]), "nome": m[2], "codigo": m[3], "texto": m[4]})
+    return itens
+
+
+def url_relatorio(repo: str, tags: list) -> str:
+    """Link do relatório completo no GitHub: o arquivo da versão, ou a pasta quando são várias."""
+    if len(tags) == 1:
+        return f"https://github.com/{repo}/blob/{tags[0]}/docs/atualizacoes/{tags[0]}.md"
+    return f"https://github.com/{repo}/tree/{tags[0]}/docs/atualizacoes"
+
+
 # ----------------------------------------------------------------------------- consulta
 def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
     """Devolve os dados da última Release se ela for mais nova que `versao`; senão None.
@@ -59,6 +92,9 @@ def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
         return None
     info = {"tag": tag, "url": j.get("html_url") or f"https://github.com/{repo}/releases",
             "notas": notas_legiveis(j.get("body") or ""), "msi": None, "repo": repo}
+    info["versoes"] = _versoes_novas(s, repo, versao, j)
+    if info["versoes"]:
+        info["relatorio_url"] = url_relatorio(repo, [v["tag"] for v in info["versoes"]])
     assets = j.get("assets", [])
     msi = next((a for a in assets if a.get("name", "").lower().endswith(".msi")), None)
     if msi:
@@ -76,6 +112,30 @@ def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
                     sha = None
         info["msi"] = {"nome": msi["name"], "url": msi["browser_download_url"], "tamanho": msi.get("size"), "sha256": sha}
     return info
+
+
+def _versoes_novas(s, repo: str, versao: str, ultima: dict) -> list:
+    """Novidades (itens com código) de todas as versões acima da instalada, da mais nova para a mais antiga.
+    Quem pulou versões vê o que cada uma trouxe. Versões sem resumo em itens ficam de fora."""
+    corpos = {ultima.get("tag_name", ""): ultima.get("body") or ""}
+    try:
+        r = s.get(f"https://api.github.com/repos/{repo}/releases", params={"per_page": 15}, timeout=10,
+                  headers={"Accept": "application/vnd.github+json"})
+        lista = r.json() if r.status_code == 200 else None
+        for rel in lista if isinstance(lista, list) else []:
+            t = rel.get("tag_name", "")
+            if t and not rel.get("draft") and not rel.get("prerelease") and _tupla(t) > _tupla(versao):
+                corpos.setdefault(t, rel.get("body") or "")
+    except Exception:
+        pass  # a lista é um extra: sem ela, vale só a última versão
+    saida = []
+    for t in sorted(corpos, key=_tupla, reverse=True):
+        if _tupla(t) <= _tupla(versao):
+            continue
+        itens = extrair_itens(corpos[t])
+        if itens:
+            saida.append({"tag": t, "itens": itens})
+    return saida
 
 
 # ----------------------------------------------------------------------------- preferências (quando avisar)

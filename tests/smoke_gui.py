@@ -274,6 +274,27 @@ def principal():
         assert store.preferencias["atualizacao"]["pular"] == "v9.9.9"
         passo("lembrar depois e pular versão")
 
+        # novidades por item com código, versões puladas e link do relatório completo
+        corpo = "## Resumo\n- [NOVO] Informações avançadas (ITEM-10): gráfico novo.\n- [CORREÇÃO] Saldo líquido (ITEM-05): cor certa.\n"
+        class SessaoB(SessaoA):
+            def get(self, u, **k):
+                if u.endswith("/releases"):
+                    return RespA(200, [{"tag_name": "v9.9.9", "body": corpo},
+                                       {"tag_name": "v9.9.8", "body": "## Resumo\n- [MELHORIA] Planilha Excel (ITEM-09): abas.\n"}])
+                r = super().get(u, **k)
+                if u.endswith("/releases/latest"):
+                    r._j["body"] = corpo
+                return r
+        info = atualizacao.consultar(SessaoB(), versao="1.0.0")
+        d = orig(app, store, info, pode_instalar=False)
+        d.update()
+        texto = d.txt.get("1.0", "end")
+        assert "Informações avançadas" in texto and "(ITEM-10)" in texto and "CORREÇÃO" in texto.upper(), texto
+        assert texto.index("Versão 9.9.9") < texto.index("Versão 9.9.8") and "(ITEM-09)" in texto
+        assert d.l_relatorio.cget("text").startswith("Ver relatório completo")
+        d.destroy()
+        passo("aviso de atualização lista as novidades por item e versão")
+
         # --- configurações
         store.trocar_modo("mestra123")
         app._atualizar_seguranca()

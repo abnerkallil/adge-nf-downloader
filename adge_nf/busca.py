@@ -572,7 +572,7 @@ class DialogoBusca(Modal):
         ui.fluxo(self.f_marcas, ws)
         dicas = []
         if "nfe_outras" in self.cats:
-            dicas.append("Outras operações (remessas, transferências etc.) aparecem no gráfico e na tabela, mas não entram no faturamento nem nas compras.")
+            dicas.append("Outras operações (remessas, transferências etc.) aparecem na tabela, mas não entram no faturamento, nas compras nem no gráfico.")
         if "nfe_resumo" in self.cats:
             dicas.append("NF-e sem ciência só têm o resumo (sem CFOP nem itens): se marcadas, entram como compra pelo valor total, sem crédito.")
         self.l_marcas_dica.config(text="  ".join(dicas))

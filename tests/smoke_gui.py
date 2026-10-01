@@ -281,12 +281,21 @@ def principal():
         bn._avancado()
         av = [w for w in bn.winfo_toplevel().winfo_children() if isinstance(w, AV.DialogoAvancado)][0]
         av.update()
-        assert abs(sum(v for _, v, _ in av.itens) - 3250.50 - 680.0) < 0.01 or abs(sum(v for _, v, _ in av.itens) - 3930.5) < 0.01, av.itens
+        assert abs(sum(v for _, v, _ in av.itens) - (3250.50 - 680.0)) < 0.01, av.itens          # o gráfico é líquido: compras reduzem
+        assert any(v < 0 for _, v, _ in av.itens) and "Entradas" in av.l_balanco.cget("text")
         bn.sel.definir("nfe_entrada", False); bn.sel.definir("servico_tomado", False)
         av.update()
         assert abs(sum(v for _, v, _ in av.itens) - 3250.50) < 0.01, av.itens
         av.marcas["nfe_entrada"].set(True); av.sel.definir("nfe_entrada", True)
         assert bn.sel.ativa("nfe_entrada") and bn.marcas["nfe_entrada"].get()
+        for c in list(bn.sel.ativos):
+            bn.sel.definir(c, False)
+        av.update()
+        assert av.itens == [] and av.l_balanco.cget("text") == ""                                 # nada marcado: zero
+        for c in ("servico_prestado", "nfe_saida", "nfe_entrada", "servico_tomado"):
+            bn.sel.definir(c, True)
+        av.update()
+        assert abs(sum(v for _, v, _ in av.itens) - (3250.50 - 680.0)) < 0.01
         av.v_modo.set("servico"); av._mudou()
         assert any(x[0].startswith("CFOP 5.102") for x in av.itens), av.itens
         av.destroy()

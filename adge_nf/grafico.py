@@ -47,11 +47,16 @@ def _rotulo_servico(a: dict) -> str:
     return classificacao.rotulo_servico(d)
 
 
-def agrupar(arquivos: list, modo: str = "parte", filtro=None, top: int = 8) -> list:
+def agrupar(arquivos: list, modo: str = "parte", filtro=None, top: int = 8, liquido: bool = False) -> list:
     """Devolve [(rótulo, valor, percentual)] em ordem decrescente; o que passa do `top` vira 'Outros'.
-    `filtro`: conjunto de categorias marcadas (ou 'ambos'/'prestado'/'tomado', das chamadas antigas)."""
+    `filtro`: conjunto de categorias marcadas (ou 'ambos'/'prestado'/'tomado', das chamadas antigas).
+    `liquido`: o valor de cada fatia leva sinal. O que entra (vendas, serviços prestados) soma, o que sai (compras, serviços tomados)
+    reduz, e devoluções invertem o sinal da própria nota. Operações neutras (outras operações) ficam de fora. O percentual
+    é a fatia no total em módulo, porque uma pizza só desenha tamanhos."""
     ativas = _selecao(filtro)
     arquivos = [a for a in arquivos if ativas is None or a["cat"] in ativas]
+    if liquido:
+        arquivos = [a for a in arquivos if core.CATEGORIAS[a["cat"]]["lado"] in ("receita", "custo")]
     lados = {core.CATEGORIAS[a["cat"]]["lado"] for a in arquivos}
     soma: dict = {}
     for a in arquivos:
@@ -67,13 +72,17 @@ def agrupar(arquivos: list, modo: str = "parte", filtro=None, top: int = 8) -> l
             chave = (nome or "(sem nome)").strip()
             if "receita" in lados and "custo" in lados:
                 chave += " · cliente" if receita else " · fornecedor"
-        soma[chave] = soma.get(chave, 0.0) + a["doc"]["valor"]
-    itens = sorted(((k, round(v, 2)) for k, v in soma.items() if v > 0), key=lambda t: -t[1])
+        v = a["doc"]["valor"]
+        if liquido:
+            v = v * info["sinal"] * (1 if info["lado"] == "receita" else -1)
+        soma[chave] = soma.get(chave, 0.0) + v
+    itens = sorted(((k, round(v, 2)) for k, v in soma.items() if (v != 0 if liquido else v > 0)), key=lambda t: -abs(t[1]))
     if len(itens) > top + 1:
         resto = itens[top:]
-        itens = itens[:top] + [(f"Outros ({len(resto)})", round(sum(v for _, v in resto), 2))]
-    total = sum(v for _, v in itens)
-    return [(k, v, (v / total * 100 if total else 0.0)) for k, v in itens]
+        itens = itens[:top] + [(f"Outros ({len(resto)})", round(sum(v for _, v in resto), 2), sum(abs(v) for _, v in resto))]
+    itens = [(i[0], i[1], i[2] if len(i) > 2 else abs(i[1])) for i in itens]
+    total = sum(m for _, _, m in itens)
+    return [(k, v, (m / total * 100 if total else 0.0)) for k, v, m in itens]
 
 
 def cor_da_fatia(rotulo: str, indice: int) -> str:

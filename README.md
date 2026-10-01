@@ -78,7 +78,8 @@ Arquivos existentes nunca são sobrescritos: se já houver uma planilha com o me
 
 ## Informações avançadas
 Depois de buscar as notas, o botão **Informações avançadas** abre:
-- **Gráfico de pizza** do período, com legenda ao lado. Pode ser visto por cliente/fornecedor, por tipo de serviço
+- **Gráfico de pizza** do período, com legenda ao lado. O centro mostra o saldo líquido: o que entra soma, o que sai reduz, e muda
+  a cada marca ligada ou desligada. Pode ser visto por cliente/fornecedor, por tipo de serviço
   (itens da Lei Complementar 116, lidos do código de tributação da própria nota) ou por prestado × tomado.
 - **Comparativo de regimes**, sempre dentro do que faz sentido para a empresa:
   - **Simples Nacional**: manter o DAS unificado (IBS/CBS dentro do DAS) ou optar pelo regime regular de IBS/CBS

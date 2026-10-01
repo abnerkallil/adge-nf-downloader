@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from adge_nf import classificacao, credito, grafico, regimes
+from adge_nf import classificacao, core, credito, grafico, regimes
 
 
 def cen(r, chave):
@@ -204,6 +204,19 @@ class Grafico(unittest.TestCase):
         self.assertEqual(r["Sem classificação"], 100)
         t = dict((k, v) for k, v, _ in grafico.agrupar(arqs, "tipo"))
         self.assertEqual(t, {"Serviços prestados": 300, "Serviços tomados": 100})
+
+    def test_grafico_liquido_compras_reduzem(self):
+        arqs = [self.arq("servico_prestado", 1000, tomador="C"), self.arq("servico_tomado", 400),
+                self.arq("nfe_devolucao_venda", 100, tomador="C"), self.arq("nfe_outras", 50)]
+        r = grafico.agrupar(arqs, "tipo", None, liquido=True)
+        valores = {k: v for k, v, _ in r}
+        self.assertEqual(valores["Serviços prestados"], 1000)
+        self.assertEqual(valores["Serviços tomados"], -400)
+        self.assertEqual(valores[core.CATEGORIAS["nfe_devolucao_venda"]["rotulo"]], -100)       # devolução de venda reduz
+        self.assertEqual(sum(valores.values()), 500)                                                # saldo; outras operações ficam de fora
+        self.assertAlmostEqual(sum(p for _, _, p in r), 100.0)
+        self.assertEqual(grafico.agrupar(arqs, "tipo", set(), liquido=True), [])                    # nada marcado: zero
+        self.assertEqual(sum(v for _, v, _ in grafico.agrupar(arqs, "tipo", {"servico_tomado"}, liquido=True)), -400)
 
     def test_outros_e_angulos(self):
         arqs = [self.arq("servico_prestado", 100 - i, tomador=f"C{i}") for i in range(12)]

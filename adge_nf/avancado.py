@@ -17,6 +17,11 @@ def num_br(v: float) -> str:
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def moeda_sinal(v: float) -> str:
+    """'R$ 1.000,00' ou '-R$ 1.000,00': o que reduz o resultado leva o sinal."""
+    return ("-" if v < 0 else "") + "R$ " + num_br(abs(v))
+
+
 def pct(v: float) -> str:
     return f"{v * 100:.2f}".replace(".", ",") + "%"
 
@@ -225,6 +230,8 @@ class DialogoAvancado(Modal):
         self.l_detalhe = rotulo(esq, "Passe o mouse ou clique em uma fatia.", 10, cor="suave", largura=px(330), justify="center",
                                 anchor="center")
         self.l_detalhe.pack(pady=(4, 0))
+        self.l_balanco = rotulo(esq, "", 9, cor="suave", largura=px(330), justify="center", anchor="center")
+        self.l_balanco.pack(pady=(6, 0))
         dir_ = tk.Frame(area, bg=P.superficie)
         dir_.pack(side="left", fill="both", expand=True, anchor="n", padx=(24, 0))
         rotulo(dir_, "Ver por", 11, "bold", "verde_escuro").pack(anchor="w")
@@ -249,9 +256,13 @@ class DialogoAvancado(Modal):
         self._atualizar_grafico()
 
     def _atualizar_grafico(self):
-        self.itens = grafico.agrupar(self.r["arquivos"], self.v_modo.get(), set(self.sel.ativos))
+        self.itens = grafico.agrupar(self.r["arquivos"], self.v_modo.get(), set(self.sel.ativos), liquido=True)
         self._desenhar()
         self._legenda()
+        soma = totais.totais(self.r["arquivos"], self.sel.ativos)
+        self.l_balanco.config(text=("Entradas " + moeda_sinal(soma["faturamento"]) + "  ·  Saídas " + moeda_sinal(soma["compras"])
+                                    + "\nO centro é o saldo: o que entra soma, o que sai reduz. Fatias maiores, mais movimento.")
+                              if self.itens else "")
 
     def _desenhar(self):
         t = self.tela
@@ -259,7 +270,10 @@ class DialogoAvancado(Modal):
         cx = cy = self.tam / 2
         raio = self.tam * 0.43
         if not self.itens:
-            t.create_text(cx, cy, text="Nenhuma categoria marcada." if not self.sel.ativos else "Sem notas para esta seleção.", fill=P.suave, font=F(11))
+            t.create_text(cx, cy - px(10), text="Saldo líquido", fill=P.suave, font=F(9))
+            t.create_text(cx, cy + px(10), text="R$ 0,00", fill=P.suave, font=F(14, "bold"))
+            t.create_text(cx, cy + px(40), text="Marque o que quer considerar." if not self.sel.ativos else "Sem notas para esta seleção.",
+                          fill=P.suave, font=F(9))
             return
         angs = grafico.angulos(self.itens)
         for i, ((rot, valor, p), (ini, ext)) in enumerate(zip(self.itens, angs)):
@@ -282,12 +296,12 @@ class DialogoAvancado(Modal):
         r2 = raio * 0.42
         t.create_oval(cx - r2, cy - r2, cx + r2, cy + r2, fill=P.superficie, outline=P.superficie)
         total = sum(v for _, v, _ in self.itens)
-        t.create_text(cx, cy - px(10), text="Total", fill=P.suave, font=F(9))
-        t.create_text(cx, cy + px(10), text="R$ " + num_br(total), fill=P.verde_escuro, font=F(11, "bold"))
+        t.create_text(cx, cy - px(10), text="Saldo líquido", fill=P.suave, font=F(9))
+        t.create_text(cx, cy + px(10), text=moeda_sinal(total), fill=P.pos_texto if total >= 0 else P.neg_texto, font=F(11, "bold"))
 
     def _texto_fatia(self, i):
         rot, valor, p = self.itens[i]
-        return f"{rot}\nR$ {num_br(valor)} · {f'{p:.1f}'.replace('.', ',')}%"
+        return f"{rot}\n{moeda_sinal(valor)} · {f'{p:.1f}'.replace('.', ',')}% do movimento"
 
     def _hover(self, i):
         if i is not None:
@@ -313,7 +327,8 @@ class DialogoAvancado(Modal):
             quad.pack(side="left", padx=(0, 8))
             tx = tk.Label(lin, text=rot, bg=bg, fg=P.texto, font=F(10), anchor="w", justify="left", wraplength=px(300))
             tx.pack(side="left", fill="x", expand=True)
-            vl = tk.Label(lin, text=f"{f'{p:.1f}'.replace('.', ',')}%  ·  R$ {num_br(valor)}", bg=bg, fg=P.suave,
+            vl = tk.Label(lin, text=f"{f'{p:.1f}'.replace('.', ',')}%  ·  {moeda_sinal(valor)}", bg=bg,
+                          fg=P.pos_texto if valor >= 0 else P.neg_texto,
                           font=F(9), anchor="e")
             vl.pack(side="right", padx=(8, 0))
             for w in (lin, quad, tx, vl):

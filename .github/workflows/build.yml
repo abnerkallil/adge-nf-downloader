@@ -20,6 +20,15 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Ajustar a versão pela tag (v1.2.0 vira 1.2.0)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "A tag precisa ser no formato v1.2.3 (veio: $v)" }
+          (Get-Content adge_nf/__init__.py) -replace 'VERSAO = ".*"', "VERSAO = `"$v`"" | Set-Content adge_nf/__init__.py -Encoding utf8
+          Select-String -Path adge_nf/__init__.py -Pattern 'VERSAO'
+
       - name: Instalar dependências
         run: pip install -r requirements-build.txt
 
@@ -43,6 +52,14 @@ jobs:
           if (-not $msi) { throw "MSI não foi gerado" }
           "{0} ({1:N1} MB)" -f $msi.Name, ($msi.Length / 1MB)
 
+      - name: Gerar o código de verificação (SHA-256)
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem dist\*.msi | Select-Object -First 1
+          $h = (Get-FileHash $msi.FullName -Algorithm SHA256).Hash.ToLower()
+          "$h  $($msi.Name)" | Out-File -Encoding ascii "$($msi.FullName).sha256"
+          Get-Content "$($msi.FullName).sha256"
+
       - name: Testar instalação silenciosa e abrir o programa
         shell: pwsh
         run: |
@@ -60,11 +77,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Adge-NF-Downloader-MSI
-          path: dist/*.msi
+          path: |
+            dist/*.msi
+            dist/*.msi.sha256
 
       - name: Publicar na Release (quando for uma tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.msi
+          files: |
+            dist/*.msi
+            dist/*.msi.sha256
           generate_release_notes: true

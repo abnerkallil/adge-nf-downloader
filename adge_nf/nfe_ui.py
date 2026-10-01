@@ -13,7 +13,8 @@ TEXTO_LIMITE = ("O limite de consultas é da própria SEFAZ (Ambiente Nacional d
 
 def _bloco(pai, titulo, linhas, tom=None, largura=540):
     """Cartão com um título e parágrafos (ou itens com ‘•’)."""
-    c = Cartao(pai, fundo=tom, borda=tom, pad=14) if tom else Cartao(pai, pad=14)
+    larg_c = px(largura + 28)    # o Cartao é um Canvas: sem largura própria ele corta o texto na largura padrão
+    c = Cartao(pai, fundo=tom, borda=tom, pad=14, width=larg_c) if tom else Cartao(pai, pad=14, width=larg_c)
     c.pack(fill="x", pady=(0, 8))
     cor = {"verde_claro": "verde_escuro", "aviso_fundo": "aviso_texto"}.get(tom, "suave")
     if titulo:
@@ -118,7 +119,7 @@ class DialogoUsarHistorico(Modal):
             f"O sistema guardou automaticamente o histórico de NF-e referente a {hist.periodo_texto()} ({n} documento(s)) "
             "na consulta anterior desta empresa.",
             "Deseja usar esse histórico ou fazer uma nova consulta à SEFAZ?"])
-        c = Cartao(self, fundo="aviso_fundo", borda="aviso_fundo", pad=14)
+        c = Cartao(self, fundo="aviso_fundo", borda="aviso_fundo", pad=14, width=px(568))
         c.pack(fill="x", pady=(0, 8))
         self.l_timer = rotulo(c.corpo, "", 10, "bold", "aviso_texto", largura=px(540))
         self.l_timer.pack(anchor="w")
@@ -166,7 +167,7 @@ class DialogoManterHistorico(Modal):
             "enquanto ela bloqueia novas consultas e consultar meses que ela já não devolve.",
             f"• {hist.quantidade()} documento(s) estão guardados agora" + (f" ({novos} novo(s) nesta consulta)." if novos else ".")])
         padrao = "pasta de histórico do sistema" if hist.pasta_padrao else "pasta escolhida"
-        c = Cartao(self, fundo="verde_claro", borda="verde_claro", pad=14)
+        c = Cartao(self, fundo="verde_claro", borda="verde_claro", pad=14, width=px(568))
         c.pack(fill="x", pady=(0, 8))
         rotulo(c.corpo, f"Local ({padrao}):", 10, "bold", "verde_escuro").pack(anchor="w")
         rotulo(c.corpo, str(hist.pasta_docs), 9, cor="verde_escuro", largura=px(540)).pack(anchor="w", pady=(2, 0))

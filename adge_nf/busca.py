@@ -133,7 +133,9 @@ class DialogoBusca(Modal):
         tipos.pack(anchor="w", pady=(4, 0))
         Interruptor(tipos, "Serviço prestado", self.v_prest).pack(side="left", padx=(0, 14))
         Interruptor(tipos, "Serviço tomado", self.v_tom).pack(side="left", padx=(0, 14))
-        Interruptor(tipos, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe")).pack(side="left")
+        tipos2 = tk.Frame(dir_, bg=P.superficie)
+        tipos2.pack(anchor="w", pady=(6, 0))
+        Interruptor(tipos2, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe")).pack(side="left")
         rotulo(dir_, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 4))
         self.seg_acao = Segmentado(dir_, [("ambos", "Total e XMLs"), ("calcular", "Só o total"), ("baixar", "Só os XMLs")], self.v_acao)
         self.seg_acao.pack(anchor="w")
@@ -372,7 +374,8 @@ class DialogoBusca(Modal):
                 h.registrar_consulta(r["ult_nsu"], r["max_nsu"], r["bloqueado_ate"], (ano, mes))
                 ctx["consultou"] = True
                 if r["situacao"] == "bloqueado":
-                    ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema). "
+                    ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
+                                       + (f": {r['mensagem']}" if r.get("mensagem") else "") + "). "
                                        + h.texto_bloqueio() + " Os resultados usam o histórico guardado.")
                 if emp.get("nfe_ciencia"):
                     self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar)

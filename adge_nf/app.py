@@ -12,11 +12,15 @@ from tkinter import filedialog, messagebox, ttk
 
 from . import NOME_APP, VERSAO, atualizacao, core
 from .core import Cancelado, ErroAdge
+from . import planilha as _plan
 from .store import Armazenamento, empresa_padrao
 
 VERDE, VERDE_ESC, VERDE_CLARO = "#1B9E5A", "#127A44", "#E7F6EE"
 TEXTO, CINZA, BORDA, BRANCO, ERRO = "#1F2933", "#6B7280", "#D5E0D9", "#FFFFFF", "#B42318"
 FONTE = ("Segoe UI", 10)
+# mesmas cores da planilha: verde (entra dinheiro) e vermelho (sai), em tons claros
+VERDE_FUNDO, VERDE_TEXTO = "#" + _plan.VERDE_FUNDO, "#" + _plan.VERDE_TEXTO
+VERMELHO_FUNDO, VERMELHO_TEXTO = "#" + _plan.VERMELHO_FUNDO, "#" + _plan.VERMELHO_TEXTO
 
 
 def formatar_cnpj(c: str) -> str:
@@ -419,8 +423,10 @@ class DialogoBusca(Modal):
         self.barra = ttk.Progressbar(self, mode="indeterminate")
 
         self.f_res = ttk.Frame(self)  # resultados (aparece após a busca)
-        cards = ttk.Frame(self.f_res)
-        cards.pack(fill="x", pady=(14, 8))
+        self.f_bloco = ttk.Frame(self.f_res)                       # totais + ações dos totais, juntos
+        self.f_bloco.pack(fill="x", pady=(14, 8))
+        cards = ttk.Frame(self.f_bloco)
+        cards.pack(fill="x")
         self.cards = {}
         for chave, rotulo in (("prestado", "Faturamento (serviços prestados)"), ("tomado", "Serviços tomados")):
             c = ttk.Frame(cards, style="Card.TFrame", padding=(16, 10))
@@ -431,6 +437,16 @@ class DialogoBusca(Modal):
             d = ttk.Label(c, text="", style="Card.TLabel")
             d.pack(anchor="w")
             self.cards[chave] = (c, v, d)
+        # saldo líquido: verde se positivo, vermelho se negativo (mesmas cores da planilha)
+        self.c_saldo = tk.Frame(cards, bg=VERDE_FUNDO, padx=16, pady=10)
+        self.l_saldo_t = tk.Label(self.c_saldo, text="Saldo líquido", bg=VERDE_FUNDO, fg=VERDE_TEXTO, font=FONTE)
+        self.l_saldo_v = tk.Label(self.c_saldo, text="—", bg=VERDE_FUNDO, fg=VERDE_TEXTO, font=("Segoe UI Semibold", 18))
+        self.l_saldo_d = tk.Label(self.c_saldo, text="Prestado − tomado, antes dos impostos", bg=VERDE_FUNDO, fg=VERDE_TEXTO, font=FONTE)
+        for w in (self.l_saldo_t, self.l_saldo_v, self.l_saldo_d):
+            w.pack(anchor="w")
+        self.f_acoes_totais = ttk.Frame(self.f_bloco)
+        self.b_avancado = botao(self.f_acoes_totais, "Informações avançadas", self._avancado)
+        self.b_copiar = botao(self.f_acoes_totais, "Copiar totais", self._copiar)
         self.l_aviso = ttk.Label(self.f_res, text="", style="Muted.TLabel", wraplength=720, justify="left")
         self.l_aviso.pack(anchor="w")
         cols = ("tipo", "numero", "data", "parte", "valor")
@@ -447,9 +463,7 @@ class DialogoBusca(Modal):
         self.l_destino = ttk.Label(self, text="", style="Muted.TLabel", wraplength=720, justify="left")
         self.b_gravar = botao(self.f_botoes, "Baixar XMLs para a pasta", self._gravar, primario=True)
         self.b_csv = botao(self.f_botoes, "Exportar planilha...", self._exportar_planilha)
-        self.b_copiar = botao(self.f_botoes, "Copiar totais", self._copiar)
         self.b_pasta = botao(self.f_botoes, "Escolher pasta...", self._escolher_pasta)
-        self.b_avancado = botao(self.f_botoes, "Informações avançadas", self._avancado)
         botao(self.f_botoes, "Fechar", self._fechar).pack(side="right")
         self._atualizar_periodo()
 
@@ -579,6 +593,16 @@ class DialogoBusca(Modal):
                 extra = f"{r['qtd']} nota(s)" + (f" · {r['canceladas']} cancelada(s) fora" if r["canceladas"] else "")
                 d.config(text=extra)
                 card.pack(side="left", padx=(0, 12))
+        self.c_saldo.pack_forget()
+        saldo = self._saldo(resumo)
+        if mostrar_totais and saldo is not None:
+            positivo = saldo >= 0
+            fundo, cor = (VERDE_FUNDO, VERDE_TEXTO) if positivo else (VERMELHO_FUNDO, VERMELHO_TEXTO)
+            self.c_saldo.config(bg=fundo)
+            for w in (self.l_saldo_t, self.l_saldo_v, self.l_saldo_d):
+                w.config(bg=fundo, fg=cor)
+            self.l_saldo_v.config(text=self._formatar_saldo(saldo))
+            self.c_saldo.pack(side="left", padx=(0, 12))
         msgs = list(avisos)
         if not arquivos:
             msgs.insert(0, "Nenhuma nota encontrada nesse período.")
@@ -596,17 +620,21 @@ class DialogoBusca(Modal):
             self.l_destino.config(text=aviso_dest, style="Erro.TLabel" if aviso_dest.startswith("⚠") else "Muted.TLabel")
             self.l_destino.pack(anchor="w", pady=(8, 0))
         for w in self.f_botoes.winfo_children():
-            if w not in (self.b_gravar, self.b_csv, self.b_copiar, self.b_pasta, self.b_avancado):
+            if w not in (self.b_gravar, self.b_csv, self.b_pasta):
                 continue
             w.pack_forget()
+        for w in (self.b_avancado, self.b_copiar):
+            w.pack_forget()
+        self.f_acoes_totais.pack_forget()
         if emp["acao"] != "calcular":
             self.b_gravar.config(state="normal" if arquivos and self.resultado["destino_ok"] else "disabled")
             self.b_gravar.pack(side="left")
             self.b_pasta.pack(side="left", padx=(8, 0))
-        if emp["acao"] != "baixar" and arquivos:
-            self.b_avancado.pack(side="left", padx=(8, 0))
         if emp["acao"] != "baixar":
-            self.b_copiar.pack(side="left", padx=(8, 0))
+            if arquivos:
+                self.b_avancado.pack(side="left")
+            self.b_copiar.pack(side="left", padx=(8, 0) if arquivos else (0, 0))
+            self.f_acoes_totais.pack(fill="x", pady=(10, 0))
             self.b_csv.pack(side="left", padx=(8, 0))
         self.f_botoes.pack(fill="x", pady=(12, 0))
         self.update_idletasks()
@@ -647,6 +675,17 @@ class DialogoBusca(Modal):
         if messagebox.askyesno(NOME_APP, f"Pronto! {resumo}.\n\nPasta:\n{destino}\n\nAbrir a pasta agora?", parent=self):
             abrir_pasta(destino)
 
+    @staticmethod
+    def _saldo(resumo: dict):
+        """Prestado − tomado (sem impostos). None se faltar um dos dois tipos."""
+        if "servico_prestado" in resumo and "servico_tomado" in resumo:
+            return round(resumo["servico_prestado"]["valor"] - resumo["servico_tomado"]["valor"], 2)
+        return None
+
+    @staticmethod
+    def _formatar_saldo(v: float) -> str:
+        return ("-" if v < 0 else "") + core.formatar_valor(abs(v)).replace("R$", "R$ ")
+
     def _texto_totais(self) -> str:
         r = self.resultado
         linhas = [f"{r['emp']['nome']} — {core.mes_exibicao(r['mes'])}/{r['ano']}"]
@@ -654,6 +693,9 @@ class DialogoBusca(Modal):
             if cat in r["resumo"]:
                 x = r["resumo"][cat]
                 linhas.append(f"{nome}: {core.formatar_valor(x['valor']).replace('R$', 'R$ ')} ({x['qtd']} nota(s))")
+        saldo = self._saldo(r["resumo"])
+        if saldo is not None:
+            linhas.append(f"Saldo líquido (prestado − tomado, antes dos impostos): {self._formatar_saldo(saldo)}")
         return "\n".join(linhas)
 
     def _copiar(self):

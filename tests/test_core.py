@@ -197,6 +197,19 @@ class Fluxo(unittest.TestCase):
             self.assertTrue(any(n.startswith("[Sucesso] Relatorio de Organizacao") for n in nomes))
             self.assertEqual(core.salvar_notas(emp, arqs, resumo, cnpj, 2026, 9)[1], {"ja_existia": 2})
 
+    def test_nome_da_empresa_com_barra_nao_quebra_o_relatorio(self):
+        with tempfile.TemporaryDirectory() as t:
+            t = pathlib.Path(t)
+            emp = {"nome": "Exemplo", "cnpj": "11.222.333/0001-81", "pfx": "", "destino": str(t), "estrutura": "direto",
+                   "tipos": {"prestado": True, "tomado": True}, "relatorio": True, "planilha": False,
+                   "prefixo_prestado": "", "prefixo_tomado": ""}
+            docs = [{"nsu": 1, "xml": xml_nfse(c(1), emit_cnpj=CNPJ, emit_nome="EMPRESA EXEMPLO TECNOLOGIA S/A", valor="10.00")}]
+            arqs, resumo, _ = core.planejar(emp, docs, CNPJ, 2026, 9)
+            destino, _ = core.salvar_notas(emp, arqs, resumo, CNPJ, 2026, 9)
+            nomes = [p.name for p in destino.iterdir()]
+            self.assertTrue(any(n.startswith("[Sucesso] Relatorio de Organizacao - EMPRESA EXEMPLO TECNOLOGIA S") for n in nomes), nomes)
+            self.assertEqual(len(nomes), 2)
+
     def test_certificado_inexistente(self):
         with self.assertRaises(core.ErroAdge):
             core.buscar({"cnpj": CNPJ, "pfx": "/nao/existe.pfx"}, "x", 2026, 9)

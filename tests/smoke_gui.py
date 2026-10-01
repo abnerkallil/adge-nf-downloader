@@ -92,6 +92,24 @@ def principal():
         assert len(b.tv.get_children()) == 3
         assert "1.250,50" in b.cards["prestado"][1].cget("text"), b.cards["prestado"][1].cget("text")
         passo("busca mostra faturamento e lista de notas")
+        # saldo líquido (prestado − tomado): verde se positivo; totais e botões no mesmo bloco
+        assert b.l_saldo_v.cget("text") == "R$ 1.170,50", b.l_saldo_v.cget("text")
+        assert str(b.c_saldo.cget("bg")).upper() == "#E3F5E9"
+        assert b.c_saldo.winfo_ismapped()
+        assert b.b_copiar.master is b.f_acoes_totais and b.b_avancado.master is b.f_acoes_totais
+        assert b.f_acoes_totais.master is b.f_bloco and b.b_copiar.winfo_ismapped()
+        assert "Saldo líquido" in b._texto_totais() and "1.170,50" in b._texto_totais()
+        neg = SessaoFalsa([(0, [
+            item(1, xml_nfse("4" * 50, valor="100.00", dh="2026-09-03T10:00:00-03:00", num="4", **eu)),
+            item(2, xml_nfse("5" * 50, valor="500.00", dh="2026-09-04T10:00:00-03:00", num="5", toma_cnpj=CNPJ, toma_nome="EMPRESA TESTE")),
+        ])])
+        bn = A.DialogoBusca(app, store, emp, sessao=neg)
+        bn.v_mes.set("Setembro"); bn.ano = 2026; bn._atualizar_periodo(); bn._buscar()
+        assert esperar(lambda: bn.resultado is not None, app)
+        assert bn.l_saldo_v.cget("text") == "-R$ 400,00", bn.l_saldo_v.cget("text")
+        assert str(bn.c_saldo.cget("bg")).upper() == "#FDE7E7" and str(bn.l_saldo_v.cget("fg")).upper() == "#C0392B"
+        bn.destroy()
+        passo("saldo líquido muda de cor (positivo/negativo)")
 
         b._copiar()
         assert "1.250,50" in app.clipboard_get()

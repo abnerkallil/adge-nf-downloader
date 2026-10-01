@@ -26,6 +26,9 @@ Programa **gratuito** para Windows que baixa as **NFS-e Nacional** (emitidas e r
 6. Confira o **faturamento** e a lista de notas. Clique em **Baixar XMLs para a pasta** para gravar.
    Também dá para **Copiar totais** ou **Exportar planilha** (Excel .xlsx).
 
+Os totais mostram o faturamento (serviços prestados), os serviços tomados e o **saldo líquido** (prestado − tomado, antes dos impostos),
+verde se positivo e vermelho se negativo. **Informações avançadas** e **Copiar totais** ficam junto desses totais.
+
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
 
 ## Informações avançadas (gráfico e comparativo de regimes)

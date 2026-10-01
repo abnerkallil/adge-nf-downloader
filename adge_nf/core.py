@@ -466,7 +466,7 @@ def salvar_notas(emp: dict, arquivos: list, resumo: dict, cnpj: str, ano: int, m
                       f"{formatar_valor(f['doc']['valor']).replace('R$', 'R$ ')} - {formatar_data(f['doc']['emissao'])} - {f['doc']['chave']}")
     empresa = next((f["doc"]["emitente_nome"] for f in arquivos if f["doc"]["emitente_doc"] == cnpj), emp.get("nome", ""))
     if emp.get("relatorio", True) and arquivos:
-        gravar(destino, f"[Sucesso] Relatorio de Organizacao - {empresa[:30]} - {mes_exibicao(mes)} de {ano}.txt",
+        gravar(destino, f"[Sucesso] Relatorio de Organizacao - {limpar_nome(empresa)[:30].strip()} - {mes_exibicao(mes)} de {ano}.txt",
                texto_relatorio(empresa, cnpj, mes, ano, linhas))
     if emp.get("planilha", emp.get("csv", False)) and arquivos:
         from . import planilha

@@ -14,7 +14,7 @@ from adge_nf import core  # noqa: E402
 from adge_nf.store import Armazenamento, empresa_padrao  # noqa: E402
 from fixtures import SessaoFalsa, item, xml_nfse  # noqa: E402
 
-CNPJ = "45890721000152"
+CNPJ = "11222333000181"
 mensagens = []
 A.messagebox.showerror = lambda *a, **k: mensagens.append(("erro", a))
 A.messagebox.showwarning = lambda *a, **k: mensagens.append(("aviso", a))
@@ -58,7 +58,7 @@ def principal():
         d = A.DialogoEmpresa(app, store)
         d.update()
         d.v_pfx.set(str(pfx)); d.v_senha.set("segredo"); d._validar()
-        assert d.v_cnpj.get() == "45.890.721/0001-52", d.v_cnpj.get()
+        assert d.v_cnpj.get() == "11.222.333/0001-81", d.v_cnpj.get()
         assert d.v_nome.get() == "EMPRESA TESTE"
         d.v_destino.set(str(t / "cli")); d.cb_est.current(1)  # ano_mes
         d._salvar()

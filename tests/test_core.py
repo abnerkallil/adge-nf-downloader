@@ -10,8 +10,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from adge_nf import core
 from fixtures import SessaoFalsa, evento_cancelamento, item, xml_nfse
 
-CNPJ = "45890721000152"
-NOME = "STHEFAN ENGENHARIA E SEGURANCA DO TRABALHO LTDA"
+CNPJ = "11222333000181"
+NOME = "EMPRESA EXEMPLO LTDA"
 
 
 def c(n):
@@ -20,10 +20,10 @@ def c(n):
 
 class Nomes(unittest.TestCase):
     def test_padrao_adge(self):
-        d = core.parse_documento(xml_nfse(c(1), emit_nome="FM ODONTO E SAUDE LTDA", toma_nome="CENTRO VENHA SORRIR LTDA",
+        d = core.parse_documento(xml_nfse(c(1), emit_nome="PRESTADOR EXEMPLO LTDA", toma_nome="CLIENTE EXEMPLO LTDA",
                                           valor="1618.00", dh="2026-09-01T19:28:27-03:00"))
         self.assertEqual(core.nome_xml("servico_prestado", d),
-                         "NOTA FISCAL DE SERVIÇO PRESTADO - FM ODONTO E SAUDE LTDA para CENTRO VENHA SORRIR LTDA em 01-09-2026 no valor de R$1.618,00.xml")
+                         "NOTA FISCAL DE SERVIÇO PRESTADO - PRESTADOR EXEMPLO LTDA para CLIENTE EXEMPLO LTDA em 01-09-2026 no valor de R$1.618,00.xml")
         self.assertTrue(core.nome_xml("servico_tomado", d).startswith("NOTA FISCAL DE SERVIÇO TOMADO - "))
 
     def test_prefixo_personalizado_aluguel(self):
@@ -32,10 +32,10 @@ class Nomes(unittest.TestCase):
         self.assertTrue(n.startswith("NOTA FISCAL DE SERVIÇO PRESTADO DE ALUGUEL - "))
 
     def test_nome_longo_nao_corta_palavra_nem_o_proprio_nome(self):
-        d = core.parse_documento(xml_nfse(c(1), emit_nome="CLINIPAM - CLINICA PARANAENSE DE ASSISTENCIA MEDICA LTDA " + "X" * 0,
+        d = core.parse_documento(xml_nfse(c(1), emit_nome="FORNECEDOR EXEMPLO DE SERVICOS MEDICOS LTDA " + "X" * 0,
                                           toma_nome=NOME, valor="861.98", dh="2026-09-01T10:00:00-03:00"))
         n = core.nome_xml("servico_tomado", d)
-        self.assertIn(NOME, n)  # nome completo da Sthefan preservado (antes saía "...DO TRABALHO LT")
+        self.assertIn(NOME, n)  # nome completo da Exemplo preservado (antes saía "...DO TRABALHO LT")
         self.assertLessEqual(len(n), core.LIMITE_NOME)
 
     def test_nome_gigante_corta_em_palavra_inteira(self):
@@ -174,7 +174,7 @@ class Fluxo(unittest.TestCase):
             (t / "cli").mkdir()
             pfx = t / "c.pfx"
             pfx.write_bytes(b"x")
-            emp = {"nome": "Sthefan", "cnpj": "45.890.721/0001-52", "pfx": str(pfx), "destino": str(t / "cli"), "estrutura": "ano_mes",
+            emp = {"nome": "Exemplo", "cnpj": "11.222.333/0001-81", "pfx": str(pfx), "destino": str(t / "cli"), "estrutura": "ano_mes",
                    "tipos": {"prestado": True, "tomado": True}, "relatorio": True, "csv": True, "prefixo_prestado": "", "prefixo_tomado": ""}
             s = SessaoFalsa([(0, [item(1, xml_nfse(c(1), emit_cnpj=CNPJ, emit_nome=NOME, valor="390.00", dh="2026-09-01T10:00:00-03:00")),
                                   item(2, xml_nfse(c(2), toma_cnpj=CNPJ, toma_nome=NOME, valor="100.00", dh="2026-09-02T10:00:00-03:00"))])])

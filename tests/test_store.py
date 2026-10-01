@@ -27,7 +27,7 @@ class CofreFalso:
         self.d[(s, u)] = p
 
 
-def gerar_pfx(caminho, senha="segredo", cn="EMPRESA TESTE LTDA:45890721000152", dias=365):
+def gerar_pfx(caminho, senha="segredo", cn="EMPRESA TESTE LTDA:11222333000181", dias=365):
     chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     nome = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
     agora = dt.datetime.now(dt.timezone.utc)
@@ -43,7 +43,7 @@ class Certificado(unittest.TestCase):
             p = pathlib.Path(t) / "c.pfx"
             gerar_pfx(p)
             info = core.ler_certificado(str(p), "segredo")
-            self.assertEqual(info["cnpj"], "45890721000152")
+            self.assertEqual(info["cnpj"], "11222333000181")
             self.assertEqual(info["nome"], "EMPRESA TESTE LTDA")
             self.assertGreater(info["valido_ate"], dt.date.today())
 
@@ -68,7 +68,7 @@ class Armazenamento_(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             kr = CofreFalso()
             a = self.novo(t, kr)
-            e = empresa_padrao(); e["nome"] = "Sthefan"
+            e = empresa_padrao(); e["nome"] = "Exemplo"
             a.salvar_empresa(e, "minha-senha-secreta")
             bruto = (pathlib.Path(t) / "empresas.json").read_text(encoding="utf-8")
             self.assertNotIn("minha-senha-secreta", bruto)

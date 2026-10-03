@@ -42,6 +42,8 @@ CATALOGO = {
     "ITEM-33": "Operações e créditos por CFOP",
     "ITEM-34": "Nota Fiscal Paulistana (Prefeitura de São Paulo)",
     "ITEM-35": "Conferência entre Ambiente Nacional e Paulistana",
+    "ITEM-36": "Aviso ao sair sem salvar as notas",
+    "ITEM-37": "Verificação de atualização passo a passo",
 }
 
 PADRAO = re.compile(r"^ITEM-\d{2,3}$")

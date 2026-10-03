@@ -72,12 +72,14 @@ def url_relatorio(repo: str, tags: list) -> str:
 
 
 # ----------------------------------------------------------------------------- consulta
-def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
+def consultar(sessao=None, repo: str = None, versao: str = VERSAO, log=lambda *_: None):
     """Devolve os dados da última Release se ela for mais nova que `versao`; senão None.
-    {tag, url, notas, msi: {nome, url, tamanho, sha256} | None}"""
+    {tag, url, notas, msi: {nome, url, tamanho, sha256} | None}
+    `log(texto)` conta cada etapa à medida que acontece (a tela mostra "checando o GitHub...", "avaliando a versão...")."""
     repo = REPO_GITHUB if repo is None else repo
     if not repo:
         return None
+    log("Checando github.com (página de versões do projeto)...")
     s = sessao
     if s is None:
         import requests
@@ -85,19 +87,25 @@ def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
     r = s.get(f"https://api.github.com/repos/{repo}/releases/latest", timeout=10,
               headers={"Accept": "application/vnd.github+json"})
     if r.status_code == 404:
+        log("O projeto ainda não publicou nenhuma versão. Nada a atualizar.")
         return None  # o repositório ainda não tem nenhuma Release
     if r.status_code != 200:
         # limite de consultas do GitHub (403/429), erro do servidor etc.: não é "sem novidade", então avisa que não conseguiu
         raise ErroAdge(f"O GitHub não respondeu à consulta de versões (HTTP {r.status_code}).")
     j = r.json()
     tag = j.get("tag_name", "")
+    log(f"GitHub respondeu. Avaliando a versão instalada (v{versao}) contra a última publicada ({tag or '?'})...")
     if not tag or _tupla(tag) <= _tupla(versao):
+        log("Nenhuma atualização necessária: você já está na versão mais recente.")
         return None
+    log(f"Atualização necessária: {tag} é mais nova que a v{versao}.")
+    log("Lendo as novidades das versões que você ainda não tem...")
     info = {"tag": tag, "url": j.get("html_url") or f"https://github.com/{repo}/releases",
             "notas": notas_legiveis(j.get("body") or ""), "msi": None, "repo": repo}
     info["versoes"] = _versoes_novas(s, repo, versao, j)
     if info["versoes"]:
         info["relatorio_url"] = url_relatorio(repo, [v["tag"] for v in info["versoes"]])
+    log("Conferindo o instalador (MSI) e o código de verificação (SHA-256)...")
     assets = j.get("assets", [])
     msi = next((a for a in assets if a.get("name", "").lower().endswith(".msi")), None)
     if msi:
@@ -114,6 +122,7 @@ def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
                 except Exception:
                     sha = None
         info["msi"] = {"nome": msi["name"], "url": msi["browser_download_url"], "tamanho": msi.get("size"), "sha256": sha}
+    log(f"Pronto: a versão {tag} está disponível para instalar.")
     return info
 
 

@@ -205,7 +205,7 @@ class TestHistorico(unittest.TestCase):
     def test_pasta_tem_nome_social(self):
         self.assertIn("Empresa", self.h.pasta.name)
         self.assertTrue(self.h.pasta.name.endswith(EU))
-        self.assertTrue(self.h.pasta_padrao)
+        self.assertEqual(self.h.pasta_docs, self.h.pasta / "xml")
 
     def test_salvar_carregar_sem_duplicar(self):
         docs = [doc_nfe(3, xml_nfe(EU, CLI)), doc_nfe(4, xml_resnfe(OUTRO), "res"), {"nsu": 0, "tipo": "proc", "schema": "", "xml": xml_nfe(EU, CLI, num=2)}]
@@ -216,32 +216,36 @@ class TestHistorico(unittest.TestCase):
 
     def test_bloqueio_e_contador(self):
         self.assertFalse(self.h.bloqueado())
-        self.h.registrar_consulta(10, 10, self.agora + dt.timedelta(hours=1), (2026, 9))
+        self.h.registrar_bloqueio(10, self.agora + dt.timedelta(hours=1), (2026, 9))
         h2 = nfe_cache.HistoricoNFe(self.emp, base=self.t.name, agora=lambda: self.agora)     # persistiu em disco
         self.assertTrue(h2.bloqueado())
         self.assertIn("1 h 00 min", h2.texto_bloqueio())
-        self.assertEqual(h2.estado["ult_nsu"], 10)
+        self.assertEqual(h2.estado["ult_nsu"], 0)                       # o NSU não anda só porque a SEFAZ foi consultada
+        self.assertEqual(h2.estado["max_nsu"], 10)
         self.agora += dt.timedelta(hours=1, minutes=1)
         self.assertFalse(h2.bloqueado())
         self.assertEqual(h2.texto_bloqueio(), "Consulta de NF-e liberada.")
         self.assertEqual(h2.periodo_texto(), "Setembro de 2026")
 
-    def test_decisoes(self):
-        self.h.salvar_docs([doc_nfe(1, xml_nfe(EU, CLI))])
-        self.h.registrar_consulta(1, 1, None, (2026, 9))
-        self.h.decidir("pendente")
-        self.assertEqual(self.h.quantidade(), 1)                       # fechou sem responder: continua guardado
-        outra = tempfile.TemporaryDirectory()
-        try:
-            self.h.decidir("manter", outra.name)
-            self.assertEqual(self.h.quantidade(), 1)
-            self.assertFalse(self.h.pasta_padrao)
-            self.assertTrue(str(self.h.pasta_docs).startswith(outra.name))
-            self.assertEqual(len(self.h.carregar_docs()), 1)
-        finally:
-            outra.cleanup()
-        self.h.decidir("descartar")
-        self.assertEqual((self.h.quantidade(), self.h.estado["ult_nsu"]), (0, 0))
+    def test_nsu_so_avanca_ao_confirmar(self):
+        """Consultou e não salvou: o NSU fica onde estava e nenhum XML entra no controle. Salvou: tudo entra junto."""
+        docs = [doc_nfe(1, xml_nfe(EU, CLI)), doc_nfe(2, xml_nfe(EU, CLI, num=2))]
+        self.h.registrar_bloqueio(2, self.agora + dt.timedelta(hours=1), (2026, 9))
+        self.assertEqual((self.h.estado["ult_nsu"], self.h.quantidade()), (0, 0))
+        self.assertTrue(self.h.bloqueado())                              # o bloqueio vale mesmo sem salvar
+        self.assertEqual(self.h.confirmar(docs, 2, 2), 2)
+        h2 = nfe_cache.HistoricoNFe(self.emp, base=self.t.name, agora=lambda: self.agora)
+        self.assertEqual((h2.estado["ult_nsu"], h2.quantidade()), (2, 2))
+        h2.confirmar([], 1, 1)                                           # nunca volta atrás
+        self.assertEqual(h2.estado["ult_nsu"], 2)
+
+    def test_estado_antigo_com_decisao_continua_abrindo(self):
+        self.h.salvar_estado()
+        import json
+        e = json.loads(self.h.arquivo.read_text(encoding="utf-8"))
+        e["decisao"] = "pendente"
+        self.h.arquivo.write_text(json.dumps(e), encoding="utf-8")
+        self.assertNotIn("decisao", nfe_cache.HistoricoNFe(self.emp, base=self.t.name).estado)
 
     def test_ciencia_marcada(self):
         self.h.marcar_ciencia(["a", "b"])

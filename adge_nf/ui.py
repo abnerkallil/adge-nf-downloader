@@ -446,10 +446,11 @@ def fluxo(frame, widgets, hgap=6, vgap=6):
         largura = frame.winfo_width()
         if largura < 50:
             return
-        for w in widgets:
+        vivos = [w for w in widgets if w.winfo_exists()]       # numa 2ª busca na mesma janela os marcadores antigos já foram destruídos
+        for w in vivos:
             w.grid_forget()
         x = linha = coluna = 0
-        for w in widgets:
+        for w in vivos:
             lw = w.winfo_reqwidth() + px(hgap)
             if coluna and x + lw > largura:
                 linha, coluna, x = linha + 1, 0, 0
@@ -517,6 +518,13 @@ class Interruptor(tk.Frame):
         for w in (self.tela, self.rot):
             w.bind("<Button-1>", self._alternar)
         self.var.trace_add("write", lambda *_: self._desenhar())
+        self._desenhar()
+
+    def desabilitar(self, sim: bool):
+        """Trava (ou destrava) o interruptor com a tela aberta; travado ele não responde ao clique."""
+        self._desab = bool(sim)
+        self.tela.config(cursor="arrow" if sim else "hand2")
+        self.rot.config(cursor="arrow" if sim else "hand2", fg=P.suave if sim else P.texto)
         self._desenhar()
 
     def _desenhar(self):
@@ -751,6 +759,12 @@ def perguntar(pai, titulo, texto="", sim="Sim", nao="Não", perigo=False, padrao
     """Pergunta de sim/não. Devolve True/False."""
     botoes = [(nao, False, "secundario"), (sim, True, "perigo" if perigo else "primario")]
     return bool(_mostrar(pai, titulo, texto, "aviso" if perigo else "pergunta", botoes))
+
+
+def escolher(pai, titulo, texto, botoes, tipo="aviso"):
+    """Pergunta com 2 ou 3 botões: [(rótulo, valor, estilo), ...] da esquerda para a direita. Devolve o valor do botão
+    clicado, ou None se a janela for fechada."""
+    return _mostrar(pai, titulo, texto, tipo, botoes)
 
 
 def pedir_texto(pai, titulo, mensagem, oculto=False, validar=None, inicial=""):

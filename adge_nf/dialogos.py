@@ -37,6 +37,7 @@ class DialogoEmpresa(Modal):
         self.v_tom = tk.BooleanVar(value=e["tipos"].get("tomado", True))
         self.v_nfe = tk.BooleanVar(value=bool(e.get("nfe")))
         self.v_ciencia = tk.BooleanVar(value=bool(e.get("nfe_ciencia")) and bool(e.get("nfe")))
+        self.v_paul = tk.BooleanVar(value=bool(e.get("paulistana")))
         self.v_acao = v(e["acao"])
         self.v_rel, self.v_csv = tk.BooleanVar(value=e["relatorio"]), tk.BooleanVar(value=e.get("planilha", e.get("csv", False)))
         self.v_lembrar = tk.BooleanVar(value=bool(e["senha_cifrada"]) or self.novo)
@@ -126,6 +127,7 @@ class DialogoEmpresa(Modal):
         Interruptor(d, "NF-e de compra e venda (modelo 55)", self.v_nfe, self._ligar_nfe).pack(anchor="w", pady=3)
         Interruptor(d, "Registrar a Ciência da Operação automaticamente", self.v_ciencia, self._ligar_ciencia, tam=9).pack(
             anchor="w", pady=(0, 3), padx=(px(26), 0))
+        Interruptor(d, "Nota Paulistana (Prefeitura de SP, só conferência)", self.v_paul).pack(anchor="w", pady=3)
         ui.divisor(d, (12, 12))
         rotulo(d, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(0, 6))
         for valor, txt in (("ambos", "Calcular o total e baixar os XMLs"), ("calcular", "Só calcular o total do período"),
@@ -257,7 +259,7 @@ class DialogoEmpresa(Modal):
             problema = "Escolha o arquivo do certificado (.pfx ou .p12)."
         elif len(cnpj) != 14:
             problema = "O CNPJ precisa ter 14 dígitos. Use \"Validar certificado\" para preencher sozinho."
-        elif not (self.v_prest.get() or self.v_tom.get() or self.v_nfe.get()):
+        elif not (self.v_prest.get() or self.v_tom.get() or self.v_nfe.get() or self.v_paul.get()):
             problema = "Marque pelo menos um tipo de nota."
         elif acao != "calcular" and (not self.v_destino.get().strip() or not Path(self.v_destino.get().strip()).is_dir()):
             problema, aba = "Escolha a pasta onde os XMLs serão salvos.", "destino"
@@ -279,7 +281,7 @@ class DialogoEmpresa(Modal):
                 return
         e.update({"nome": nome, "cnpj": cnpj, "pfx": pfx, "destino": self.v_destino.get().strip(),
                   "estrutura": estrutura, "tipos": {"prestado": self.v_prest.get(), "tomado": self.v_tom.get()},
-                  "nfe": self.v_nfe.get(), "nfe_ciencia": self.v_ciencia.get() and self.v_nfe.get(), "acao": acao, "relatorio": self.v_rel.get(), "planilha": self.v_csv.get(),
+                  "nfe": self.v_nfe.get(), "paulistana": self.v_paul.get(), "nfe_ciencia": self.v_ciencia.get() and self.v_nfe.get(), "acao": acao, "relatorio": self.v_rel.get(), "planilha": self.v_csv.get(),
                   "prefixo_prestado": self.v_pref_prest.get().strip(), "prefixo_tomado": self.v_pref_tom.get().strip()})
         if self._validade:
             e["cert_validade"] = self._validade.isoformat()

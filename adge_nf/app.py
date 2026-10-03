@@ -4,6 +4,7 @@ import os
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
@@ -72,6 +73,8 @@ class App(tk.Tk):
         self.fila_att: "queue.Queue" = queue.Queue()
         self.fila_cert: "queue.Queue" = queue.Queue()
         self.sessao_att = None  # os testes injetam uma sessão falsa
+        self.pausa_log_att = 0.45  # segundos entre as etapas do log de "Verificar agora" (os testes zeram)
+        self._log_att = []
         self.info_att = None
         self.pagina = "empresas"
         self.selecionada_id = None
@@ -239,6 +242,8 @@ class App(tk.Tk):
                 Chip(chips, nome, tom).pack(side="left", padx=(0, 5))
         if e.get("nfe"):
             Chip(chips, "NF-e", "azul").pack(side="left", padx=(0, 5))
+        if e.get("paulistana"):
+            Chip(chips, "Paulistana", "azul").pack(side="left", padx=(0, 5))
         Chip(chips, ACOES.get(e["acao"], e["acao"]), "neutro").pack(side="left")
         if e.get("nfe"):
             try:
@@ -246,7 +251,7 @@ class App(tk.Tk):
             except OSError:
                 texto = ""
             if texto and not texto.endswith("liberada."):
-                Chip(k, "NF-e: consulta bloqueada pela SEFAZ", "amarelo").pack(anchor="w", pady=(6, 0))
+                Chip(k, "NF-e: desligada nas buscas até a SEFAZ liberar", "amarelo").pack(anchor="w", pady=(6, 0))
         sel = situacao_certificado(e.get("cert_validade"))
         if sel:
             Chip(k, sel[0], sel[1]).pack(anchor="w", pady=(6, 0))
@@ -322,11 +327,11 @@ class App(tk.Tk):
             self.store.excluir_empresa(e["id"])
             self._atualizar_lista()
 
-    def _buscar(self, id_=None, periodo=None, auto=False):
+    def _buscar(self, id_=None, periodo=None, auto=False, da_pasta=None):
         e = self.store.obter(id_) if id_ else self._selecionada()
         if e:
             self.selecionada_id = e["id"]
-            self.wait_window(DialogoBusca(self, self.store, e, periodo=periodo, auto=auto))
+            self.wait_window(DialogoBusca(self, self.store, e, periodo=periodo, auto=auto, da_pasta=da_pasta))
             if self.winfo_exists() and self.pagina == "empresas":
                 self._atualizar_lista(e["id"])
 
@@ -335,7 +340,7 @@ class App(tk.Tk):
         f = tk.Frame(self.conteudo, bg=P.fundo)
         self.paginas["historico"] = f
         self._cabecalho_pagina(
-            f, "Histórico", "As últimas consultas feitas neste computador. Só ficam os totais: as notas não são guardadas.",
+            f, "Histórico", "As consultas cujas notas foram salvas numa pasta. Ao abrir, o programa lê os XMLs da pasta, sem consultar nada de novo.",
             lambda cab: Botao(cab, "Limpar histórico", self._limpar_historico, estilo="perigo"))
         self.rol_hist = Rolavel(f)
         self.rol_hist.pack(fill="both", expand=True, padx=(px(32), px(24)), pady=(0, px(16)))
@@ -349,7 +354,8 @@ class App(tk.Tk):
             c = Cartao(corpo, pad=24)
             c.pack(fill="x", pady=(px(10), 0))
             rotulo(c.corpo, "Ainda não há consultas", 14, "bold", "verde_escuro").pack(anchor="w")
-            rotulo(c.corpo, "Depois de buscar as notas de uma empresa, a consulta aparece aqui e você pode abri-la de novo com um clique.",
+            rotulo(c.corpo, "Depois de buscar e SALVAR as notas de uma empresa numa pasta, a consulta aparece aqui e você pode abri-la de novo com um clique. "
+                   "Consulta que não foi salva não entra no histórico.",
                    10, cor="suave", largura=px(620)).pack(anchor="w", pady=(4, 0))
             return
         for h in hist:
@@ -367,14 +373,25 @@ class App(tk.Tk):
                 Chip(tot, "Prestado " + core.formatar_valor(h["prestado"]).replace("R$", "R$ "), "verde").pack(side="left", padx=3)
             if h.get("tomado") is not None:
                 Chip(tot, "Tomado " + core.formatar_valor(h["tomado"]).replace("R$", "R$ "), "vermelho").pack(side="left", padx=3)
-            Botao(k, "Abrir de novo", lambda x=h: self._abrir_historico(x), estilo="suave", pady=7).grid(row=0, column=2)
+            if h.get("pasta"):
+                rotulo(esq, h["pasta"], 8, cor="suave", largura=px(520)).pack(anchor="w")
+            Botao(k, "Abrir", lambda x=h: self._abrir_historico(x), estilo="suave", pady=7).grid(row=0, column=2)
 
     def _abrir_historico(self, h):
         e = next((x for x in self.store.empresas if x["id"] == h["empresa_id"]), None)
         if not e:
             ui.avisar(self, "Empresa não encontrada", "Esta empresa foi excluída. Cadastre-a de novo para consultar.")
             return
-        self._buscar(e["id"], periodo=(h["ano"], h["mes"]), auto=True)
+        pasta = h.get("pasta")
+        if pasta and Path(pasta).is_dir():
+            self._buscar(e["id"], periodo=(h["ano"], h["mes"]), da_pasta=pasta)         # lê da pasta salva: nenhuma consulta
+        else:
+            motivo = ("A pasta onde as notas foram salvas não existe mais: " + pasta) if pasta else \
+                     "Esta consulta é de uma versão antiga e não guardou a pasta das notas."
+            if not ui.perguntar(self, "Não consigo abrir pela pasta", motivo + "\n\nQuer fazer uma consulta nova deste mês? Ela acessa o Ambiente Nacional "
+                                "(e a SEFAZ, se a NF-e estiver ligada) de novo.", sim="Consultar de novo", nao="Cancelar"):
+                return
+            self._buscar(e["id"], periodo=(h["ano"], h["mes"]), auto=True)
         if self.winfo_exists() and self.pagina == "historico":
             self._atualizar_historico()
 
@@ -592,14 +609,22 @@ class App(tk.Tk):
     def _checar_atualizacao(self, manual=False):
         """Consulta em segundo plano; o resultado volta pela fila (a janela só mexe na tela no fio principal)."""
         if manual:
+            self._log_att = []
             self.l_att.config(text="Verificando...")
+
+        def log(m):
+            if manual:
+                self.fila_att.put(("log", m))
+                time.sleep(self.pausa_log_att)       # só para dar tempo de ler cada etapa
 
         def trabalho():
             try:
-                info = atualizacao.consultar(sessao=self.sessao_att)
+                info = atualizacao.consultar(sessao=self.sessao_att, log=log)
                 self.fila_att.put(("info", (info, manual)))
+            except ErroAdge as e:
+                self.fila_att.put(("falha", (manual, str(e))))
             except Exception:
-                self.fila_att.put(("falha", manual))
+                self.fila_att.put(("falha", (manual, "")))
         threading.Thread(target=trabalho, daemon=True).start()
 
     def _mostrar_faixa(self):
@@ -611,9 +636,14 @@ class App(tk.Tk):
         try:
             while True:
                 tipo, dado = self.fila_att.get_nowait()
+                if tipo == "log":
+                    self._log_att = (self._log_att + [dado])[-4:]
+                    self.l_att.config(text="\n".join(self._log_att))
+                    continue
                 if tipo == "falha":
-                    if dado:
-                        self.l_att.config(text="Não consegui verificar agora. Confira a internet.")
+                    manual, motivo = dado
+                    if manual:
+                        self.l_att.config(text=motivo or "Não consegui verificar agora. Confira a internet.")
                     continue
                 info, manual = dado
                 if not manual:
@@ -623,12 +653,13 @@ class App(tk.Tk):
                     except OSError:
                         pass
                 if not info:
-                    if manual:
+                    if manual and not self._log_att:
                         self.l_att.config(text=f"Você já está na versão mais recente (v{VERSAO}).")
                     continue
                 self.info_att = info
                 if manual:
-                    self.l_att.config(text=f"Versão {info['tag']} disponível.")
+                    if not self._log_att:
+                        self.l_att.config(text=f"Versão {info['tag']} disponível.")
                     self._abrir_dialogo_att()
                 elif atualizacao.deve_avisar(info, self.store.preferencias):
                     self._mostrar_faixa()

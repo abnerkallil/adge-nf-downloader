@@ -1,10 +1,7 @@
-"""Janelas da NF-e: avisos ao ligar a busca e a ciência da operação, e as perguntas sobre o histórico guardado."""
+"""Janelas da NF-e: avisos ao ligar a busca e a ciência da operação."""
 import tkinter as tk
-from pathlib import Path
-from tkinter import filedialog
 
 from . import ui
-from .nfe_cache import HistoricoNFe, formatar_espera
 from .ui import P, Botao, Cartao, Interruptor, Modal, px, rotulo
 
 TEXTO_LIMITE = ("O limite de consultas é da própria SEFAZ (Ambiente Nacional da NF-e), e não do sistema da Adge: sem nota nova, "
@@ -39,9 +36,10 @@ class DialogoAtivarNFe(Modal):
             "• As NF-e entram no mesmo relatório: totais, saldo, gráfico, planilha e análise de regimes. Você marca o que quer considerar."])
         _bloco(self, "Limites da SEFAZ", [
             "• " + TEXTO_LIMITE,
-            "• O programa mostra um contador. Enquanto a SEFAZ não libera, ele usa o histórico guardado no computador.",
-            "• A SEFAZ entrega por sequência (NSU) e guarda só alguns meses; por isso o que ela devolve fica guardado numa pasta do "
-            "sistema (você escolhe manter, trocar a pasta ou apagar)."], tom="aviso_fundo")
+            "• O programa mostra um contador. Enquanto a SEFAZ não libera, a NF-e fica desligada na busca (sem opção de ligar), "
+            "para você não reiniciar a espera sem querer; ela volta sozinha quando o prazo acaba.",
+            "• A SEFAZ entrega por sequência (NSU) e guarda só alguns meses; por isso o programa só avança o controle dessa sequência "
+            "quando você SALVA as notas numa pasta. Consultou e saiu sem salvar? A próxima consulta recomeça do mesmo ponto."], tom="aviso_fundo")
         _bloco(self, "Notas de compra sem Ciência da Operação", [
             "A SEFAZ entrega só o resumo (sem CFOP nem itens). Elas ficam separadas, em planilha à parte, e só entram nos totais se você marcar. "
             "Para receber o XML completo é preciso registrar a Ciência da Operação, que é uma opção à parte e também começa desligada."])
@@ -101,93 +99,4 @@ class DialogoAtivarCiencia(Modal):
 
     def _fim(self, v):
         self.resultado = bool(v and self.v_ok.get())
-        self.destroy()
-
-
-# ============================================================================= histórico guardado automaticamente
-class DialogoUsarHistorico(Modal):
-    """Na consulta seguinte a um fechamento sem resposta: usar o histórico guardado ou consultar de novo.
-    resultado = 'usar', 'nova' ou None (fechou: a busca não segue)."""
-
-    def __init__(self, pai, hist: HistoricoNFe):
-        super().__init__(pai, "Histórico de NF-e guardado")
-        self.hist, self.resultado = hist, None
-        n = hist.quantidade()
-        ui.titulo(self, "Há um histórico de NF-e guardado",
-                  hist.emp.get("nome", "")).pack(anchor="w", pady=(0, 10))
-        _bloco(self, None, [
-            f"O sistema guardou automaticamente o histórico de NF-e referente a {hist.periodo_texto()} ({n} documento(s)) "
-            "na consulta anterior desta empresa.",
-            "Deseja usar esse histórico ou fazer uma nova consulta à SEFAZ?"])
-        c = Cartao(self, fundo="aviso_fundo", borda="aviso_fundo", pad=14, width=px(568))
-        c.pack(fill="x", pady=(0, 8))
-        self.l_timer = rotulo(c.corpo, "", 10, "bold", "aviso_texto", largura=px(540))
-        self.l_timer.pack(anchor="w")
-        rotulo(c.corpo, TEXTO_LIMITE, 9, cor="aviso_texto", largura=px(540)).pack(anchor="w", pady=(4, 0))
-        lin = tk.Frame(self, bg=P.fundo)
-        lin.pack(fill="x", pady=(10, 0))
-        self.b_nova = Botao(lin, "Nova consulta", lambda: self._fim("nova"))
-        self.b_nova.pack(side="right")
-        self.b_usar = Botao(lin, "Usar o histórico guardado", lambda: self._fim("usar"), estilo="primario")
-        self.b_usar.pack(side="right", padx=(0, 8))
-        self.protocol("WM_DELETE_WINDOW", lambda: self._fim(None))
-        self.bind("<Escape>", lambda *_: self._fim(None))
-        self._tic()
-        self.mostrar()
-
-    def _tic(self):
-        if not self.winfo_exists():
-            return
-        resto = self.hist.bloqueio_restante()
-        if resto is None:
-            self.l_timer.config(text="A SEFAZ já liberou uma nova consulta.")
-            self.b_nova.config(state="normal")
-        else:
-            self.l_timer.config(text=f"Nova consulta liberada em {formatar_espera(resto)} (às {self.hist.liberado_as():%H:%M}).")
-            self.b_nova.config(state="disabled")
-        self.after(1000, self._tic)
-
-    def _fim(self, v):
-        self.resultado = v
-        self.destroy()
-
-
-class DialogoManterHistorico(Modal):
-    """Depois de cada consulta com NF-e: explica o limite da SEFAZ e pergunta se o histórico fica guardado no sistema.
-    resultado = ('manter', None) | ('manter', pasta) | ('descartar', None) | None (fechou sem responder: fica guardado até a próxima consulta)."""
-
-    def __init__(self, pai, hist: HistoricoNFe, novos: int = 0):
-        super().__init__(pai, "Guardar o histórico de NF-e?")
-        self.hist, self.resultado = hist, None
-        ui.titulo(self, "Guardar o histórico de NF-e deste computador?",
-                  hist.emp.get("nome", "")).pack(anchor="w", pady=(0, 10))
-        _bloco(self, "Por que perguntamos", [
-            "• " + TEXTO_LIMITE,
-            "• A SEFAZ entrega as NF-e por sequência e guarda só alguns meses. Guardar o que ela devolveu permite refazer o relatório "
-            "enquanto ela bloqueia novas consultas e consultar meses que ela já não devolve.",
-            f"• {hist.quantidade()} documento(s) estão guardados agora" + (f" ({novos} novo(s) nesta consulta)." if novos else ".")])
-        padrao = "pasta de histórico do sistema" if hist.pasta_padrao else "pasta escolhida"
-        c = Cartao(self, fundo="verde_claro", borda="verde_claro", pad=14, width=px(568))
-        c.pack(fill="x", pady=(0, 8))
-        rotulo(c.corpo, f"Local ({padrao}):", 10, "bold", "verde_escuro").pack(anchor="w")
-        rotulo(c.corpo, str(hist.pasta_docs), 9, cor="verde_escuro", largura=px(540)).pack(anchor="w", pady=(2, 0))
-        rotulo(self, "Se você fechar esta janela sem escolher, o histórico fica guardado no sistema até a próxima consulta desta empresa.",
-               9, cor="suave", largura=px(560)).pack(anchor="w", pady=(2, 0))
-        lin = tk.Frame(self, bg=P.fundo)
-        lin.pack(fill="x", pady=(14, 0))
-        Botao(lin, "Não guardar", lambda: self._fim(("descartar", None))).pack(side="right")
-        Botao(lin, "Escolher pasta...", self._escolher).pack(side="right", padx=(0, 8))
-        Botao(lin, "Sim, guardar", lambda: self._fim(("manter", None)), estilo="primario").pack(side="right", padx=(0, 8))
-        self.protocol("WM_DELETE_WINDOW", lambda: self._fim(None))
-        self.bind("<Escape>", lambda *_: self._fim(None))
-        self.mostrar()
-
-    def _escolher(self):
-        base = str(self.hist.pasta_docs.parent) if self.hist.pasta_docs.parent.is_dir() else str(Path.home())
-        c = filedialog.askdirectory(parent=self, title="Escolha a pasta onde guardar o histórico de NF-e", initialdir=base)
-        if c:
-            self._fim(("manter", c))
-
-    def _fim(self, v):
-        self.resultado = v
         self.destroy()

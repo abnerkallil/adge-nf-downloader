@@ -12,8 +12,7 @@ from tkinter import filedialog, ttk
 from . import NOME_APP, core, nfe, paulistana, totais
 from . import ui
 from .core import Cancelado, ErroAdge
-from .nfe_cache import HistoricoNFe
-from .nfe_ui import DialogoManterHistorico, DialogoUsarHistorico
+from .nfe_cache import HistoricoNFe, formatar_espera
 from .store import Armazenamento
 from .ui import P, Botao, Campo, Cartao, Chip, Interruptor, Marcador, Modal, Segmentado, F, px, rotulo
 
@@ -31,15 +30,17 @@ def mes_anterior(hoje: dt.date = None):
 
 
 def registrar_historico(store: Armazenamento, emp: dict, ano: int, mes: int, resumo: dict, qtd: int,
-                        faturamento: float = None, compras: float = None):
-    """Guarda a consulta no histórico (só um resumo: sem notas, sem senhas). Máximo de 30 entradas, a mais nova primeiro.
+                        faturamento: float = None, compras: float = None, pasta: str = None):
+    """Guarda a consulta no histórico (só um resumo e o caminho da pasta onde as notas foram salvas: sem notas, sem senhas).
+    Máximo de 30 entradas, a mais nova primeiro. Só é chamada depois de salvar: sem pasta salva não há histórico.
     Com NF-e, faturamento e compras vêm da seleção padrão (NFS-e + NF-e); sem eles valem os totais das NFS-e."""
     prest = faturamento if faturamento is not None else resumo.get("servico_prestado", {}).get("valor")
     tom = compras if compras is not None else resumo.get("servico_tomado", {}).get("valor")
     h = store.preferencias.setdefault("historico", [])
     h[:] = [x for x in h if not (x.get("empresa_id") == emp["id"] and x.get("ano") == ano and x.get("mes") == mes)]
     h.insert(0, {"empresa_id": emp["id"], "nome": emp["nome"], "ano": ano, "mes": mes, "notas": qtd,
-                 "quando": dt.datetime.now().isoformat(timespec="minutes"), "prestado": prest, "tomado": tom})
+                 "quando": dt.datetime.now().isoformat(timespec="minutes"), "prestado": prest, "tomado": tom,
+                 "pasta": str(pasta) if pasta else None})
     del h[HISTORICO_MAX:]
     try:
         store.salvar()
@@ -52,7 +53,7 @@ class DialogoBusca(Modal):
                ("parte", "Cliente / Fornecedor", 312, "w"), ("valor", "Valor", 120, "e"))
 
     def __init__(self, pai, store: Armazenamento, emp: dict, sessao=None, periodo=None, auto=False, sessao_nfe=None,
-                 base_historico=None, sessao_paulistana=None):
+                 base_historico=None, sessao_paulistana=None, da_pasta=None):
         super().__init__(pai, f"Buscar notas — {emp['nome']}", margem=22)
         self.store, self.emp, self.sessao_teste = store, dict(emp), sessao
         self.sessao_nfe_teste, self.base_historico, self.hist = sessao_nfe, base_historico, None
@@ -71,8 +72,11 @@ class DialogoBusca(Modal):
         self.v_prest = tk.BooleanVar(value=emp["tipos"].get("prestado", True))
         self.v_tom = tk.BooleanVar(value=emp["tipos"].get("tomado", True))
         self.v_nfe = tk.BooleanVar(value=bool(emp.get("nfe")))
-        self.v_paul = tk.BooleanVar(value=False)
+        self.v_paul = tk.BooleanVar(value=bool(emp.get("paulistana")))
         self.docs_paul, self.msgs_paul = None, []
+        self.da_pasta = str(da_pasta) if da_pasta else None   # reabertura pelo histórico: lê da pasta salva, sem consultar nada
+        self.salvo, self.pasta_salva = False, None
+        self._nfe_travada = None                              # None = ainda não aplicado; True/False = estado atual do interruptor
         self.v_acao = tk.StringVar(value=emp["acao"])
         self.v_filtro = tk.StringVar(value="todas")
         self.v_texto = tk.StringVar()
@@ -88,7 +92,9 @@ class DialogoBusca(Modal):
         self.mostrar()
         self.after(150, self._ler_fila)
         self._tic_nfe()
-        if auto:
+        if self.da_pasta:
+            self.after(250, self._abrir_da_pasta)
+        elif auto:
             self.after(250, self._buscar)
 
     # ------------------------------------------------------------------ montagem
@@ -138,7 +144,8 @@ class DialogoBusca(Modal):
         Interruptor(tipos, "Serviço tomado", self.v_tom).pack(side="left", padx=(0, 14))
         tipos2 = tk.Frame(dir_, bg=P.superficie)
         tipos2.pack(anchor="w", pady=(6, 0))
-        Interruptor(tipos2, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe")).pack(side="left", padx=(0, 14))
+        self.sw_nfe = Interruptor(tipos2, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe"))
+        self.sw_nfe.pack(side="left", padx=(0, 14))
         Interruptor(tipos2, "Nota Paulistana (Prefeitura de SP, só conferência)", self.v_paul).pack(side="left")
         rotulo(dir_, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 4))
         self.seg_acao = Segmentado(dir_, [("ambos", "Total e XMLs"), ("calcular", "Só o total"), ("baixar", "Só os XMLs")], self.v_acao)
@@ -281,17 +288,25 @@ class DialogoBusca(Modal):
         return self.hist
 
     def _tic_nfe(self):
+        """A cada segundo: mostra o contador da SEFAZ e trava/destrava o interruptor da NF-e. Com a SEFAZ bloqueada a NF-e fica
+        desligada e sem opção de religar (consultar de novo só reinicia a espera de 1 hora); quando o prazo acaba ela volta sozinha."""
         if not self.winfo_exists():
             return
-        if self.emp.get("nfe"):
+        if self.emp.get("nfe") and not self.da_pasta:
             h = self._historico()
+            travada = h.bloqueio_restante() is not None
+            if travada != self._nfe_travada:
+                self._nfe_travada = travada
+                self.sw_nfe.desabilitar(travada)
+                self.v_nfe.set(not travada)
             ciencia = "ciência automática" if self.emp.get("nfe_ciencia") else "sem ciência"
-            if h.bloqueio_restante() is None:
+            if not travada:
                 self.l_nfe_timer.config(text=f"NF-e: consulta liberada na SEFAZ ({ciencia}).", fg=ui._cor("verde_escuro"))
             else:
-                resto = h.texto_bloqueio().replace("Consulta de NF-e bloqueada pela SEFAZ", "NF-e: bloqueada pela SEFAZ")
-                self.l_nfe_timer.config(text=resto.rstrip(".") + ". Limite da SEFAZ, não da Adge.",
-                                        fg=ui._cor("aviso_texto"))
+                self.l_nfe_timer.config(
+                    text=f"NF-e desligada: a SEFAZ libera outra consulta em {formatar_espera(h.bloqueio_restante() or dt.timedelta(0))} "
+                         f"(às {h.liberado_as():%H:%M}). Volta sozinha. Limite da SEFAZ, não da Adge.",
+                    fg=ui._cor("aviso_texto"))
         self.after(1000, self._tic_nfe)
 
     # ------------------------------------------------------------------ busca
@@ -301,36 +316,21 @@ class DialogoBusca(Modal):
         e["acao"] = self.v_acao.get()
         return e
 
-    def _modo_nfe(self) -> str:
-        """'consultar' (vai à SEFAZ), 'historico' (usa o que está guardado) ou 'cancelar'."""
-        h = self._historico()
-        if h.estado["decisao"] == "pendente" and h.quantidade() > 0:
-            d = DialogoUsarHistorico(self, h)
-            self.wait_window(d)
-            if d.resultado is None:
-                return "cancelar"
-            return "historico" if d.resultado == "usar" else "consultar"
-        return "historico" if h.bloqueado() else "consultar"
-
     def _buscar(self):
         if self.trabalhando:
             return
         emp = self._emp_da_busca()
-        usar_nfe = bool(emp.get("nfe") and self.v_nfe.get())
+        usar_nfe = bool(emp.get("nfe") and self.v_nfe.get() and not self._historico().bloqueado())
         usar_paul = bool(self.v_paul.get())
         if not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"] or usar_nfe or usar_paul):
             ui.avisar(self, "Marque pelo menos um tipo de nota", "Escolha serviço prestado, serviço tomado, NF-e, Nota Paulistana ou mais de um.")
-            return
-        modo_nfe = self._modo_nfe() if usar_nfe else None
-        if modo_nfe == "cancelar":
             return
         try:
             senha = self.store.senha_da_empresa(emp)
         except ErroAdge as e:
             ui.avisar(self, "Não consegui usar a senha salva", str(e))
             senha = ""
-        sem_rede = usar_nfe and modo_nfe == "historico" and not usar_paul and not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"])
-        if not senha and not sem_rede:
+        if not senha:
             senha = ui.pedir_texto(self, "Senha do certificado", f"Digite a senha do certificado de {emp['nome']}:", oculto=True,
                                    validar=lambda t: None if t else "Digite a senha.")
             if not senha:
@@ -344,6 +344,7 @@ class DialogoBusca(Modal):
         self.consulta = (emp, ano, mes)
         tem_nfse = bool(emp["tipos"]["prestado"] or emp["tipos"]["tomado"])
         self.docs_paul, self.msgs_paul = None, []
+        self.salvo, self.pasta_salva, self.da_pasta = False, None, None   # busca nova: nada salvo ainda
 
         def trabalho():
             try:
@@ -352,7 +353,7 @@ class DialogoBusca(Modal):
                                              cancelar=lambda: self.cancelar_flag, sessao=self.sessao_teste)
                 else:
                     docs, cnpj = [], re.sub(r"\D", "", emp["cnpj"])
-                ctx = self._trabalho_nfe(emp, senha, cnpj, ano, mes, modo_nfe) if usar_nfe else None
+                ctx = self._trabalho_nfe(emp, senha, cnpj, ano, mes) if usar_nfe else None
                 if usar_paul:
                     self._trabalho_paulistana(emp, senha, cnpj, ano, mes)
                 self.fila.put(("ok", (docs, cnpj, ctx)))
@@ -380,37 +381,48 @@ class DialogoBusca(Modal):
         except ImportError as e:
             self.docs_paul, self.msgs_paul = [], [f"Nota Paulistana: instalação incompleta (falta um componente): {e}"]
 
-    def _trabalho_nfe(self, emp, senha, cnpj, ano, mes, modo) -> dict:
-        """Parte da NF-e da busca (roda fora da tela). Erros da SEFAZ não derrubam as NFS-e: viram avisos."""
+    def _trabalho_nfe(self, emp, senha, cnpj, ano, mes) -> dict:
+        """Parte da NF-e da busca (roda fora da tela). Erros da SEFAZ não derrubam as NFS-e: viram avisos.
+        O bloqueio da SEFAZ é gravado na hora; o NSU e os XMLs ficam na memória (`pend_docs`) até a pessoa salvar as notas."""
         h = self.hist
-        ctx = {"modo": modo, "msgs": [], "novos": 0, "ciencia": 0, "consultou": False}
+        ctx = {"msgs": [], "novos": 0, "ciencia": 0, "consultou": False, "pend_docs": [], "confirmado": False,
+               "ult_nsu": h.estado["ult_nsu"], "max_nsu": h.estado["max_nsu"]}
         log = lambda m: self.fila.put(("log", m))   # noqa: E731
         cancelar = lambda: self.cancelar_flag       # noqa: E731
-        if modo == "consultar":
-            try:
-                sessao = self.sessao_nfe_teste or nfe.sessao_nfe(emp["pfx"], senha)
-                log("Consultando as NF-e na SEFAZ...")
-                r = nfe.consultar_distribuicao(sessao, cnpj, h.estado["ult_nsu"], log=log, cancelar=cancelar)
-                ctx["novos"] = h.salvar_docs(r["docs"])
-                h.registrar_consulta(r["ult_nsu"], r["max_nsu"], r["bloqueado_ate"], (ano, mes))
-                ctx["consultou"] = True
-                if r["situacao"] == "bloqueado":
-                    ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
-                                       + (f": {r['mensagem']}" if r.get("mensagem") else "") + "). Os resultados usam o histórico guardado.")
-                if emp.get("nfe_ciencia"):
-                    self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar)
-            except (Cancelado,):
-                raise
-            except ErroAdge as e:
-                ctx["msgs"].append(f"NF-e não consultada: {e} Os resultados usam o histórico guardado, se houver.")
-        ctx["docs"] = h.carregar_docs()
+        try:
+            sessao = self.sessao_nfe_teste or nfe.sessao_nfe(emp["pfx"], senha)
+            log("Consultando as NF-e na SEFAZ...")
+            r = nfe.consultar_distribuicao(sessao, cnpj, h.estado["ult_nsu"], log=log, cancelar=cancelar)
+            h.registrar_bloqueio(r["max_nsu"], r["bloqueado_ate"], (ano, mes))
+            ctx.update(consultou=True, ult_nsu=r["ult_nsu"], max_nsu=r["max_nsu"], novos=len(r["docs"]), pend_docs=list(r["docs"]))
+            if r["situacao"] == "bloqueado":
+                ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
+                                   + (f": {r['mensagem']}" if r.get("mensagem") else "") + ").")
+            if emp.get("nfe_ciencia"):
+                self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar)
+        except Cancelado:
+            raise
+        except ErroAdge as e:
+            ctx["msgs"].append(f"NF-e não consultada: {e}")
+        ctx["docs"] = self._juntar_docs(h.carregar_docs(), ctx["pend_docs"])
         if not ctx["docs"] and not ctx["msgs"]:
-            ctx["msgs"].append("Nenhuma NF-e guardada para esta empresa ainda.")
+            ctx["msgs"].append("Nenhuma NF-e encontrada para esta empresa.")
         return ctx
+
+    @staticmethod
+    def _juntar_docs(guardados: list, novos: list) -> list:
+        """NF-e já confirmadas em consultas anteriores + as desta consulta (que só entram no controle ao salvar)."""
+        vistos, saida = set(), []
+        for d in list(guardados) + list(novos):
+            k = (int(d.get("nsu") or 0), d.get("tipo"), None if int(d.get("nsu") or 0) else hash(d.get("xml")))
+            if k not in vistos:
+                vistos.add(k)
+                saida.append(d)
+        return saida
 
     def _ciencia(self, sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar):
         h = self.hist
-        pend = nfe.pendentes_ciencia(h.carregar_docs(), cnpj, ano, mes, h.ciencias())
+        pend = nfe.pendentes_ciencia(self._juntar_docs(h.carregar_docs(), ctx["pend_docs"]), cnpj, ano, mes, h.ciencias())
         if not pend:
             return
         log(f"Registrando a Ciência da Operação de {len(pend)} nota(s)...")
@@ -436,7 +448,8 @@ class DialogoBusca(Modal):
                 trazidos += r["docs"]
             time.sleep(self.pausa_chave)
         if trazidos:
-            ctx["novos"] += h.salvar_docs(trazidos)
+            ctx["pend_docs"] += trazidos
+            ctx["novos"] += len(trazidos)
         pendentes_xml = len(ok) - sum(1 for d in trazidos if d.get("tipo") == "proc")
         if pendentes_xml > 0:
             ctx["msgs"].append(f"Ciência registrada em {len(ok)} nota(s); {pendentes_xml} ainda sem o XML completo (a SEFAZ costuma "
@@ -472,7 +485,6 @@ class DialogoBusca(Modal):
                 elif tipo == "ok":
                     self._ocupado(False)
                     self._concluir(*dado)
-                    self._perguntar_historico(dado[2])
                 elif tipo == "erro":
                     self._ocupado(False)
                     self.l_status.config(text="")
@@ -485,24 +497,27 @@ class DialogoBusca(Modal):
         if self.winfo_exists():
             self.after(150, self._ler_fila)
 
-    def _perguntar_historico(self, ctx):
-        """Depois de uma consulta real à SEFAZ: explica o limite e pergunta se o histórico fica guardado. Fechar sem responder
-        deixa tudo guardado no sistema até a próxima consulta desta empresa."""
-        if not ctx or not ctx["consultou"] or not self.winfo_exists():
+    # ------------------------------------------------------------------ histórico: reabrir pela pasta salva
+    def _abrir_da_pasta(self):
+        """Reabre uma consulta do histórico lendo os XMLs da pasta onde ela foi salva. Não consulta ADN, SEFAZ nem Prefeitura
+        e não pede a senha do certificado; só "Buscar notas" faz uma consulta nova."""
+        cnpj = re.sub(r"\D", "", self.emp["cnpj"])
+        try:
+            adn, nf, sp = core.carregar_pasta(self.da_pasta, cnpj)
+        except ErroAdge as e:
+            self.da_pasta = None
+            ui.erro(self, "Não consegui abrir a pasta salva", str(e))
             return
-        h = self.hist
-        d = DialogoManterHistorico(self, h, ctx["novos"])
-        self.wait_window(d)
-        if d.resultado is None:
-            h.decidir("pendente")
-        else:
-            acao, pasta = d.resultado
-            try:
-                h.decidir(acao, pasta)
-            except OSError as e:
-                ui.erro(self, "Não consegui mover o histórico", str(e))
-        if self.winfo_exists():
-            self.update_idletasks()
+        self.f_res.pack_forget()
+        self.f_botoes.pack_forget()
+        self.l_destino.pack_forget()
+        emp = dict(self.emp, acao="calcular", tipos={"prestado": True, "tomado": True})
+        self.consulta = (emp, self.ano, self._mes_num())
+        self.docs_paul, self.msgs_paul = (sp if sp else None), []
+        ctx = {"docs": nf, "msgs": [], "novos": 0, "ciencia": 0, "consultou": False, "pend_docs": [], "confirmado": True,
+               "ult_nsu": 0, "max_nsu": 0} if nf else None
+        self.salvo, self.pasta_salva = True, self.da_pasta
+        self._concluir(adn, cnpj, ctx)
 
     # ------------------------------------------------------------------ resultado
     def _categorias_presentes(self, arquivos, resumo) -> list:
@@ -534,7 +549,11 @@ class DialogoBusca(Modal):
         destino_prev, aviso_dest = None, ""
         if self.pasta_manual:
             emp = dict(emp, destino=self.pasta_manual, estrutura="direto")
-        if emp["acao"] != "calcular":
+        if self.da_pasta:
+            aviso_dest = f"Notas lidas da pasta onde foram salvas: {self.da_pasta}. Nenhuma consulta nova foi feita."
+        elif emp["acao"] == "calcular" and not self.pasta_manual:
+            aviso_dest = "Só o total: as notas ainda não foram salvas. Use \"Escolher pasta...\" se quiser guardar os XMLs e manter esta consulta no histórico."
+        if emp["acao"] != "calcular" or self.pasta_manual:
             try:
                 if not str(emp["destino"]).strip():
                     raise ErroAdge("Esta empresa não tem pasta de destino definida.")
@@ -558,11 +577,10 @@ class DialogoBusca(Modal):
             self.sel.ativos |= totais.padrao_ativos(self.cats)
         else:
             self.sel.ativos &= set(self.cats)
-        if not self.pasta_manual:
-            soma = totais.totais(arquivos, self.sel.ativos)
-            registrar_historico(self.store, self.emp, ano, mes, resumo, len(arquivos), soma["faturamento"] if self._tem_lado("receita") else None,
-                                soma["compras"] if self._tem_lado("custo") else None)
-        self.l_status.config(text=f"{len(docs)} documento(s) consultados." + (f" · {len(ctx['docs'])} de NF-e no histórico." if ctx else ""))
+        if self.da_pasta:
+            self.l_status.config(text="Notas lidas da pasta salva (sem nova consulta).")
+        else:
+            self.l_status.config(text=f"{len(docs)} documento(s) consultados." + (f" · {len(ctx['docs'])} documento(s) de NF-e." if ctx else ""))
         self._montar_marcadores()
         self.l_detalhe.config(text="Selecione uma nota para ver os detalhes.")
 
@@ -580,12 +598,13 @@ class DialogoBusca(Modal):
             self.f_acoes_totais.pack(fill="x", pady=(10, 0))
         # a barra de baixo é empacotada primeiro (side="bottom") para nunca ficar sem espaço quando a lista é grande
         self.f_botoes.pack(side="bottom", fill="x", pady=(12, 0))
-        if emp["acao"] != "calcular" and aviso_dest:
+        if aviso_dest:
             self.l_destino.config(text=aviso_dest, fg=P.erro if aviso_dest.startswith("⚠") else P.suave)
             self.l_destino.pack(side="bottom", anchor="w", pady=(8, 0))
         self.f_res.pack(fill="both", expand=True, pady=(4, 0))
-        if emp["acao"] != "calcular":
-            self.b_gravar.pack(side="left")
+        if not self.da_pasta:
+            if emp["acao"] != "calcular" or self.pasta_manual:
+                self.b_gravar.pack(side="left")
             self.b_pasta.pack(side="left", padx=(8, 0))
         if emp["acao"] != "baixar":
             self.b_csv.pack(side="left", padx=(8, 0))
@@ -805,9 +824,27 @@ class DialogoBusca(Modal):
         except (ErroAdge, OSError) as e:
             ui.erro(self, "Não consegui gravar os arquivos", str(e))
             return
+        self.salvo, self.pasta_salva = True, str(destino)
+        self._registrar_salvo(destino)
         resumo = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in contagem.items())
         if ui.perguntar(self, "Pronto!", f"{resumo}.\n\nPasta:\n{destino}", sim="Abrir a pasta", nao="Fechar"):
             ui.abrir_pasta(destino)
+
+    def _registrar_salvo(self, destino):
+        """Só depois de salvar: a consulta entra no histórico (com o caminho da pasta) e o NSU da NF-e avança."""
+        r = self.resultado
+        soma = totais.totais(r["arquivos"], self.sel.ativos)
+        registrar_historico(self.store, self.emp, r["ano"], r["mes"], r["resumo"], len(r["arquivos"]),
+                            soma["faturamento"] if self._tem_lado("receita") else None,
+                            soma["compras"] if self._tem_lado("custo") else None, pasta=str(destino))
+        ctx = r.get("nfe")
+        if ctx and ctx.get("consultou") and not ctx.get("confirmado") and self.hist is not None:
+            try:
+                self.hist.confirmar(ctx["pend_docs"], ctx["ult_nsu"], ctx["max_nsu"])
+                ctx["confirmado"] = True
+            except OSError as e:
+                ui.avisar(self, "Não consegui guardar o controle da NF-e", f"{e}\n\nAs notas foram salvas na pasta, mas a próxima consulta "
+                                                                              "de NF-e vai repetir as mesmas notas.")
 
     @staticmethod
     def _formatar_saldo(v: float) -> str:
@@ -859,7 +896,38 @@ class DialogoBusca(Modal):
         if ui.perguntar(self, "Planilha salva", "Quer abrir a pasta onde ela ficou?", sim="Abrir a pasta", nao="Agora não"):
             ui.abrir_pasta(Path(caminho).parent)
 
+    def _tem_nao_salvo(self) -> bool:
+        r = self.resultado
+        if not r or self.salvo or self.da_pasta:
+            return False
+        return any(a["cat"] in self.sel.ativos and not a.get("sem_xml") for a in r["arquivos"])
+
     def _fechar(self):
         if self.trabalhando:
             self.cancelar_flag = True
+        elif self._tem_nao_salvo():
+            texto = ("Você ainda não salvou as notas desta consulta em nenhuma pasta.\n\n"
+                     "Se sair agora, esta consulta não entra no histórico e, para ver estas notas de novo, o sistema terá de consultar tudo outra vez.")
+            ctx = self.resultado.get("nfe")
+            if ctx and ctx.get("consultou") and not ctx.get("confirmado") and self.hist is not None and self.hist.bloqueado():
+                texto += (f"\n\nAtenção: a SEFAZ já bloqueou novas consultas de NF-e (libera às {self.hist.liberado_as():%H:%M}). "
+                          "Sem salvar, as NF-e desta consulta só voltam depois disso.")
+            escolha = ui.escolher(self, "As notas não foram salvas", texto,
+                                  [("Voltar", "voltar", "secundario"), ("Sair sem salvar", "sair", "secundario"),
+                                   ("Salvar numa pasta", "salvar", "primario")])
+            if escolha == "salvar":
+                self._salvar_e_fechar()
+                return
+            if escolha != "sair":
+                return
         self.destroy()
+
+    def _salvar_e_fechar(self):
+        r = self.resultado
+        if not self.pasta_manual and (r["emp"]["acao"] == "calcular" or not r["destino_ok"]):
+            self._escolher_pasta()
+            if not self.pasta_manual:
+                return
+        self._gravar()
+        if self.salvo:
+            self.destroy()

@@ -527,3 +527,28 @@ def salvar_notas(emp: dict, arquivos: list, resumo: dict, cnpj: str, ano: int, m
             n += 1
         planilha.gerar_xlsx(alvo, empresa, ano, mes, arquivos, resumo, canceladas, ativos)
     return destino, contagem
+
+
+def carregar_pasta(pasta, cnpj: str):
+    """Relê os XMLs de uma pasta onde as notas já foram salvas (é assim que o histórico reabre uma consulta, sem ir ao ADN, à
+    SEFAZ ou à Prefeitura). Devolve (docs_nfse, docs_nfe, docs_paulistana) no mesmo formato da consulta, pronto para `planejar`.
+    Cancelamentos e NF-e só com resumo não viram XML na gravação, então não voltam por aqui (ficam no relatório da pasta)."""
+    pasta = Path(pasta)
+    if not pasta.is_dir():
+        raise ErroAdge(f"A pasta onde as notas foram salvas não existe mais: {pasta}")
+    from . import paulistana
+    adn, nf, sp = [], [], []
+    for i, arq in enumerate(sorted(pasta.glob("*.xml")), 1):
+        try:
+            texto = arq.read_text(encoding="utf-8")
+            raiz = ET.fromstring(texto.encode("utf-8"))
+        except (OSError, UnicodeDecodeError, ET.ParseError):
+            continue
+        if _achar(raiz, "infNFSe") is not None:
+            adn.append({"nsu": i, "chave": "", "tipo": "NFSE", "tipo_evento": "", "gerado_em": "", "xml": texto})
+        elif _achar(raiz, "infNFe") is not None:
+            nf.append({"nsu": i, "tipo": "proc", "schema": "procNFe_v4.00.xsd", "xml": texto})
+        elif _local(raiz.tag) == "NFe" and _achar(raiz, "ChaveNFe") is not None:
+            d = paulistana.parse_nfe(raiz)
+            sp.append({"lado": "prestado" if d["emitente_doc"] == cnpj else "tomado", "xml": texto})
+    return adn, nf, sp

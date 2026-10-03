@@ -128,7 +128,7 @@ def parse_evento(xml_texto) -> dict:
 def parse_documento(xml_texto, schema: str = "") -> dict:
     raiz = ET.fromstring(xml_texto.encode("utf-8") if isinstance(xml_texto, str) else xml_texto)
     nome = _local(raiz.tag)
-    if nome in ("nfeProc", "NFe") or _achar(raiz, "infNFe") is not None:
+    if nome == "nfeProc" or _achar(raiz, "infNFe") is not None:
         return parse_nfe(xml_texto)
     if nome == "resNFe":
         return parse_resumo(xml_texto)

@@ -23,7 +23,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
   (Simples: DAS unificado × regime regular de IBS/CBS; Presumido e Real: um contra o outro, hoje e com a reforma),
   com estimativa de créditos das notas tomadas.
 - Cadastro de várias empresas em **cartões**, com senhas protegidas no Cofre do Windows e aviso de validade do certificado.
-- **Histórico** das últimas consultas, com reabertura em um clique.
+- **Histórico** das consultas salvas: reabre lendo a pasta onde as notas foram guardadas, sem consultar de novo.
 - Visual claro ou **modo escuro**, com menu lateral e telas que se ajustam ao tamanho da janela.
 - **Atualização dentro do programa**, com verificação de integridade do instalador.
 
@@ -48,8 +48,9 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 6. Conferir os totais e a lista de notas, que pode ser filtrada e ordenada. Em seguida, **Baixar XMLs para a pasta**
    grava os arquivos, **Exportar planilha** gera o Excel e **Copiar totais** leva o resumo para a área de transferência.
 
-Atalhos: **Ctrl+N** adiciona uma empresa e **Enter** abre a busca da empresa selecionada. A tela **Histórico** guarda as
-últimas 30 consultas (somente os totais) e permite repeti-las com **Abrir de novo**. Em **Configurações** ficam o
+Atalhos: **Ctrl+N** adiciona uma empresa e **Enter** abre a busca da empresa selecionada. A tela **Histórico** lista as
+últimas 30 consultas **salvas** em pasta e reabre cada uma lendo os XMLs dessa pasta (**Abrir**), sem consultar nada de novo.
+Fechar a busca sem salvar mostra um aviso: consulta não salva não entra no histórico. Em **Configurações** ficam o
 modo escuro, a senha mestra, as pastas e as atualizações; em **Sobre**, a apresentação do projeto e os links para avaliar.
 
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
@@ -59,8 +60,11 @@ Na empresa, a opção **NF-e de compra e venda** vem desligada; ao ligar, um avi
 Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1.
 - **Consulta por sequência (NSU)**, não por mês. O programa guarda o último NSU e baixa só o novo; depois filtra pelo mês escolhido.
 - **Limite da SEFAZ**: sem nota nova, ela só libera outra consulta depois de cerca de 1 hora. O limite é da SEFAZ, não do programa.
-  A tela mostra um contador e, enquanto bloqueada, o resultado sai do **histórico guardado** no computador (pasta do sistema, por empresa,
-  ou outra pasta à escolha). Depois de cada consulta o programa pergunta se o histórico fica guardado.
+  A tela mostra um contador e, enquanto a SEFAZ está bloqueada, a NF-e fica **desligada e travada** na busca (consultar de novo só
+  reiniciaria a espera); ela volta sozinha quando o prazo acaba.
+- **O NSU só avança ao salvar**: as notas e o último NSU entram no controle do programa quando os XMLs são salvos numa pasta. Quem
+  consulta e sai sem salvar não perde nada, porque a próxima consulta recomeça do mesmo NSU. O horário de bloqueio da SEFAZ, porém,
+  vale desde a consulta.
 - **Ciência da Operação** (opção separada, desligada por padrão): registra o evento 210210 das compras para a SEFAZ liberar o XML completo.
   É um ato em nome da empresa; o aviso explica os riscos e que ele não é um risco fiscal por si só. Só a ciência é enviada.
 - **Notas sem ciência** chegam só em resumo: ficam em aba separada da planilha e só entram nos totais se marcadas (como compra, pelo valor total).
@@ -69,7 +73,7 @@ Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1
   bonificações ficam em "outras operações" e não somam. O valor é o total da nota (vNF).
 
 ## Nota Paulistana (conferência)
-Na janela de busca, o botão **Nota Paulistana (Prefeitura de SP, só conferência)** consulta o web service da própria prefeitura
+A chave **Nota Paulistana (Prefeitura de SP, só conferência)** fica no cadastro da empresa (Nova e Editar) e na janela de busca, e consulta o web service da própria prefeitura
 (nfews.prefeitura.sp.gov.br), com o mesmo certificado A1. Serve para empresas da capital quando o sistema contábil e a Paulistana divergem.
 - **Fonte separada**: as notas da Paulistana nunca se misturam com as do Ambiente Nacional e começam **desmarcadas** nos totais.
   Marcar as duas fontes ao mesmo tempo soma ambas.

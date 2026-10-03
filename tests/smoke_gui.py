@@ -21,6 +21,8 @@ ui.erro = lambda *a, **k: mensagens.append(("erro", a))
 ui.avisar = lambda *a, **k: mensagens.append(("aviso", a))
 ui.perguntar = lambda *a, **k: (mensagens.append(("pergunta", a)) or True)
 ui.informar = lambda *a, **k: mensagens.append(("info", a))
+ESCOLHA = {"v": "sair"}                       # resposta combinada para o aviso "as notas não foram salvas"
+ui.escolher = lambda *a, **k: (mensagens.append(("escolher", a)) or ESCOLHA["v"])
 ui.abrir_pasta = lambda *_: None
 
 
@@ -73,6 +75,19 @@ def principal():
         assert len(app._cartoes) == 1 and app.selecionada_id == d.emp["id"]
         assert store.empresas[0]["cert_validade"] == "2099-01-01"
         passo("cadastro de empresa salva e lista de cartões atualiza")
+
+        # Editar empresa tem a chave da Paulistana, igual a NF-e (começa desligada e fica gravada)
+        de = D.DialogoEmpresa(app, store, store.empresas[0])
+        de.update()
+        assert de.v_paul.get() is False
+        de.v_paul.set(True); de._salvar()
+        assert de.salvou and store.empresas[0]["paulistana"] is True
+        de = D.DialogoEmpresa(app, store, store.empresas[0])
+        de.update()
+        assert de.v_paul.get() is True
+        de.v_paul.set(False); de._salvar()
+        assert de.salvou and store.empresas[0]["paulistana"] is False
+        passo("Editar empresa: chave da Nota Paulistana liga, grava e desliga")
 
         # --- busca
         emp = store.empresas[0]
@@ -132,8 +147,7 @@ def principal():
         b.tv.selection_set(b.tv.get_children()[0]); b.update()
         assert "Nota" in b.l_detalhe.cget("text") and "Valor" in b.l_detalhe.cget("text"), b.l_detalhe.cget("text")
         passo("filtros, ordenação e detalhe da nota")
-        h = store.preferencias["historico"]
-        assert len(h) == 1 and h[0]["mes"] == 9 and abs(h[0]["prestado"] - 100) < 0.001 and abs(h[0]["tomado"] - 500) < 0.001, h  # a 2ª busca (mesmo mês) substitui a 1ª
+        assert store.preferencias.get("historico", []) == [], "consulta sem salvar não pode entrar no histórico"
 
         b._copiar()
         assert "1.250,50" in app.clipboard_get()
@@ -149,11 +163,16 @@ def principal():
             assert wbk.sheetnames == ["Geral", "Prestado", "Tomado", "Canceladas"], wbk.sheetnames
             assert abs(wbk["Geral"]["C3"].value - 1250.50) < 0.001
             passo("exportar planilha Excel")
+        assert b._tem_nao_salvo()
         b._gravar()
         pasta = t / "cli" / "2026" / "09-Setembro"
         nomes = [p.name for p in pasta.iterdir()]
         assert len(nomes) == 4, nomes  # 3 XMLs + relatório
-        passo("gravação cria pasta ano/mês e arquivos")
+        h = store.preferencias["historico"]
+        assert len(h) == 1 and h[0]["mes"] == 9 and h[0]["pasta"] == str(pasta), h
+        assert abs(h[0]["prestado"] - 1250.50) < 0.001 and abs(h[0]["tomado"] - 80) < 0.001, h
+        assert not b._tem_nao_salvo()
+        passo("gravação cria pasta ano/mês e arquivos e só então entra no histórico")
 
         # --- só calcular não exige destino
         emp2 = dict(emp, acao="calcular", destino="")
@@ -161,9 +180,18 @@ def principal():
         b2._escolher_mes(8); b2.ano = 2026; b2._atualizar_meses()
         b2._buscar()
         assert esperar(lambda: b2.resultado is not None, app)
-        assert not b2.b_gravar.winfo_ismapped()
-        b2.destroy()
-        passo("modo só calcular")
+        assert not b2.b_gravar.winfo_ismapped() and b2.b_pasta.winfo_ismapped()
+        assert "ainda não foram salvas" in b2.l_destino.cget("text"), b2.l_destino.cget("text")
+        ESCOLHA["v"] = "voltar"
+        b2._fechar()
+        assert b2.winfo_exists() and mensagens[-1][0] == "escolher"      # até no "só o total": avisa que nada foi salvo
+        (t / "calc").mkdir()
+        B.filedialog.askdirectory = lambda **k: str(t / "calc")
+        ESCOLHA["v"] = "salvar"
+        b2._fechar()                                                      # "Salvar numa pasta": escolhe, grava e fecha
+        assert not b2.winfo_exists() and len(list((t / "calc").iterdir())) == 4
+        assert store.preferencias["historico"][0]["pasta"] == str(t / "calc")
+        passo("modo só calcular: pode salvar numa pasta ao sair")
 
         # --- informações avançadas: gráfico + comparativo de regimes
         from adge_nf import avancado as AV
@@ -229,19 +257,6 @@ def principal():
         from fixtures import (SessaoSefazFalsa, chave_nfe, soap_dist, xml_nfe, xml_resnfe)
         OUTRO, CLI = "33333333000133", "44444444000144"
 
-        class Fecha(tk.Toplevel):
-            """Substitui as janelas modais: guarda a resposta combinada e fecha na hora."""
-            resposta = None
-            def __init__(self, pai, *a, **k):
-                super().__init__(pai)
-                self.resultado = type(self).resposta
-                self.after(50, self.destroy)
-
-        class ManterFalso(Fecha):
-            resposta = None                                   # fechou sem responder
-        class UsarFalso(Fecha):
-            resposta = "usar"
-        B.DialogoManterHistorico, B.DialogoUsarHistorico = ManterFalso, UsarFalso
         hist_base = t / "hist"
         sefaz = SessaoSefazFalsa([soap_dist("138", [
             (1, "procNFe_v4.00.xsd", xml_nfe(CNPJ, CLI, [("5102", 2000.0)], num=1, icms=340.0)),
@@ -302,18 +317,57 @@ def principal():
         bn.sel.definir("servico_tomado", True)
         passo("informações avançadas usam a mesma seleção e mostram CFOP")
 
-        # contador da SEFAZ: depois da consulta aparece o bloqueio e a próxima busca usa o histórico guardado
+        # a consulta bloqueou a SEFAZ, mas como nada foi salvo o NSU não andou e nenhum XML entrou no controle
         h = nfe_cache.HistoricoNFe(emp_n, base=str(hist_base))
-        assert h.bloqueado() and h.quantidade() == 4 and h.estado["decisao"] == "pendente", h.estado
+        assert h.bloqueado() and h.estado["ult_nsu"] == 0 and h.quantidade() == 0, h.estado
         bn.update(); bn._tic_nfe()
-        assert "bloqueada pela SEFAZ" in bn.l_nfe_timer.cget("text"), bn.l_nfe_timer.cget("text")
+        assert bn.sw_nfe._desab and not bn.v_nfe.get(), "NF-e deve ficar desligada e travada durante o bloqueio"
+        assert "NF-e desligada" in bn.l_nfe_timer.cget("text"), bn.l_nfe_timer.cget("text")
+        passo("SEFAZ bloqueada: NF-e desliga e trava; NSU não anda sem salvar")
+
+        # sair sem salvar: aviso (com a nota sobre a SEFAZ); "Voltar" mantém a janela
+        ESCOLHA["v"] = "voltar"
+        bn._fechar()
+        assert bn.winfo_exists() and mensagens[-1][0] == "escolher" and "SEFAZ já bloqueou" in mensagens[-1][1][2], mensagens[-1]
+        # salvar: o histórico nasce, com a pasta, e só então o NSU avança e os XMLs entram no controle
+        bn._gravar()
+        h = nfe_cache.HistoricoNFe(emp_n, base=str(hist_base))
+        assert h.estado["ult_nsu"] == 4 and h.quantidade() == 4, h.estado
+        assert store.preferencias["historico"][0]["pasta"] == str(t / "cli" / "2026" / "09-Setembro")
+        passo("salvar cria o histórico (com a pasta) e confirma o NSU da NF-e")
+
+        # com a SEFAZ bloqueada a próxima busca não toca nela: só NFS-e
         bn.resultado = None
-        bn._buscar()                                                                   # histórico "pendente": pergunta e usa o guardado
+        bn._buscar()
         assert esperar(lambda: bn.resultado is not None, app)
-        assert len(sefaz.enviados) == 1, "não deveria consultar a SEFAZ enquanto bloqueada/usando histórico"
-        assert bn.cards["fat"][1].cget("text") == "R$ 3.250,50"
-        bn.destroy()
-        passo("contador de bloqueio e uso do histórico guardado")
+        assert len(sefaz.enviados) == 1, "não deveria consultar a SEFAZ enquanto bloqueada"
+        assert bn.cards["fat"][1].cget("text") == "R$ 1.250,50", bn.cards["fat"][1].cget("text")
+        # prazo vencido: a NF-e volta sozinha, consulta a partir do NSU confirmado e reaproveita as notas já guardadas
+        e_ = h.estado; e_["bloqueio_ate"] = "2000-01-01T00:00:00"; h.salvar_estado()
+        bn._tic_nfe()
+        assert not bn.sw_nfe._desab and bn.v_nfe.get()
+        bn.resultado = None
+        bn._buscar()
+        assert esperar(lambda: bn.resultado is not None, app)
+        assert len(sefaz.enviados) == 2 and "000000000000004" in sefaz.enviados[1][1], sefaz.enviados[1][1]
+        assert bn.cards["fat"][1].cget("text") == "R$ 3.250,50", bn.cards["fat"][1].cget("text")
+        bn._tic_nfe()
+        assert bn.sw_nfe._desab, "a SEFAZ voltou a bloquear (137): NF-e trava de novo"
+        passo("NF-e volta quando o prazo acaba, parte do NSU confirmado e reaproveita o que já foi guardado")
+
+        # fechar sem salvar escolhendo "Sair sem salvar": nada entra no histórico novo
+        outro = B.DialogoBusca(app, store, dict(emp, nfe=False), sessao=sessao)
+        outro._escolher_mes(7); outro.ano = 2026; outro._atualizar_meses(); outro._buscar()
+        assert esperar(lambda: outro.resultado is not None, app)
+        n_hist = len(store.preferencias["historico"])
+        ESCOLHA["v"] = "sair"
+        outro._fechar()
+        assert not outro.winfo_exists() and len(store.preferencias["historico"]) == n_hist
+        # "Salvar numa pasta" a partir do aviso grava, registra e fecha
+        ESCOLHA["v"] = "salvar"
+        bn._fechar()
+        assert not bn.winfo_exists()
+        passo("aviso ao sair: sair sem salvar não cria histórico; salvar grava e fecha")
 
         # --- Nota Paulistana: busca separada, fica desmarcada, e a conferência aparece nos avisos
         from adge_nf import nfe as NFE2
@@ -327,8 +381,8 @@ def principal():
         sp = SessaoSP([soap_sp("ConsultaNFeRecebidas", []), soap_sp("ConsultaCNPJ", detalhes=["999"]),
                        soap_sp("ConsultaNFeEmitidas", [xml_nfe_sp("999", 77, "2026-09-20", 1234.0, CNPJ, CLI)])])
         NFE2.carregar_assinador = lambda pfx, senha: assinador_falso()
-        bp = B.DialogoBusca(app, store, dict(emp, tipos={"prestado": True, "tomado": True}), sessao=sessao, sessao_paulistana=sp)
-        bp.v_paul.set(True)
+        bp = B.DialogoBusca(app, store, dict(emp, tipos={"prestado": True, "tomado": True}, paulistana=True), sessao=sessao, sessao_paulistana=sp)
+        assert bp.v_paul.get() is True               # vem ligada porque a empresa tem a Paulistana ligada no cadastro
         bp._escolher_mes(8); bp.ano = 2026; bp._atualizar_meses(); bp._buscar()
         assert esperar(lambda: bp.resultado is not None, app), f"busca com Paulistana não terminou: {mensagens}"
         assert len(sp.enviados) == 3
@@ -376,6 +430,7 @@ def principal():
                 return RespA(200, c=self.c)
 
         app.sessao_att = SessaoA()
+        app.pausa_log_att = 0
         abertos = []
         orig = A.DialogoAtualizacao
         def fabrica(pai, st, info, **k):
@@ -387,6 +442,7 @@ def principal():
         app._checar_atualizacao(manual=True)
         assert esperar(lambda: abertos, app, 15), f"instalação não foi disparada: {mensagens}"
         assert pathlib.Path(abertos[0]).read_bytes() == conteudo
+        assert "Atualização necessária" in app.l_att.cget("text") and "Pronto" in app.l_att.cget("text"), app.l_att.cget("text")
         passo("atualização baixa, confere a integridade e dispara a instalação")
         A.DialogoAtualizacao = orig
 
@@ -467,19 +523,36 @@ def principal():
         # --- histórico, tema escuro e validade do certificado
         app._ir("historico"); app.update()
         assert len(app.rol_hist.corpo.winfo_children()) == 1
-        abertas = []
+        abertas, dialogos = [], []
         orig_busca = A.DialogoBusca
-        def fabrica_busca(pai, st, e, periodo=None, auto=False):
-            abertas.append((periodo, auto))
-            dlg = orig_busca(pai, st, e, sessao=sessao, periodo=periodo, auto=auto)
+
+        class Proibida:
+            def get(self, *a, **k): raise AssertionError("reabrir pelo histórico não pode consultar o ADN")
+            def post(self, *a, **k): raise AssertionError("reabrir pelo histórico não pode consultar a SEFAZ nem a Prefeitura")
+
+        def fabrica_busca(pai, st, e, periodo=None, auto=False, da_pasta=None):
+            abertas.append((periodo, auto, da_pasta))
+            fontes = dict(sessao_nfe=Proibida(), sessao_paulistana=Proibida()) if da_pasta else {}
+            dlg = orig_busca(pai, st, e, sessao=Proibida() if da_pasta else sessao, periodo=periodo, auto=auto, da_pasta=da_pasta, **fontes)
+            dialogos.append(dlg)
             def fim():
                 if dlg.winfo_exists():
                     dlg.destroy() if dlg.resultado else dlg.after(100, fim)
             dlg.after(200, fim)
             return dlg
         A.DialogoBusca = fabrica_busca
-        app._abrir_historico(store.preferencias["historico"][0])
-        assert abertas == [((2026, 9), True)], abertas
+        reg = store.preferencias["historico"][0]
+        pasta_h = str(t / "cli" / "2026" / "09-Setembro")
+        assert reg["pasta"] == pasta_h
+        app._abrir_historico(reg)
+        assert abertas == [((2026, 9), False, pasta_h)], abertas        # abre pela pasta, sem busca automática
+        r = dialogos[0].resultado
+        assert abs(r["resumo"]["servico_prestado"]["valor"] - 1250.50) < 0.001 and abs(r["resumo"]["nfe_saida"]["valor"] - 2000.0) < 0.001, r["resumo"]
+        assert dialogos[0].da_pasta == pasta_h and dialogos[0].salvo
+        # entrada antiga (sem pasta) ou pasta que sumiu: oferece uma consulta nova
+        app._abrir_historico(dict(reg, pasta=None))
+        app._abrir_historico(dict(reg, pasta=str(t / "sumiu")))
+        assert abertas[1:] == [((2026, 9), True, None), ((2026, 9), True, None)], abertas
         A.DialogoBusca = orig_busca
         n = len(mensagens)
         app._abrir_historico({"empresa_id": "nao-existe", "ano": 2026, "mes": 1})

@@ -296,6 +296,27 @@ def ler_certificado(pfx: str, senha: str) -> dict:
 
 
 # ----------------------------------------------------------------------------- período e plano
+def alternar_periodo(selecionados, ano: int, mes: int) -> set:
+    """Consulta em lote: clicar num mês marca ou desmarca o par (ano, mês). A seleção nunca fica vazia (o último mês não sai)."""
+    novo = set(selecionados)
+    novo ^= {(int(ano), int(mes))}
+    return novo or set(selecionados)
+
+
+def formatar_periodos(periodos) -> str:
+    """[(2026,1),(2026,2),(2026,3)] -> 'Jan, Fev e Mar de 2026'; com anos diferentes: 'Dez/2025 e Jan/2026'."""
+    ps = sorted({(int(a), int(m)) for a, m in periodos})
+    if not ps:
+        return ""
+    curto = lambda m: MESES_TELA[m - 1][:3]   # noqa: E731
+    if len({a for a, _ in ps}) == 1:
+        nomes = [curto(m) for _, m in ps]
+        junto = nomes[0] if len(nomes) == 1 else ", ".join(nomes[:-1]) + " e " + nomes[-1]
+        return f"{junto} de {ps[0][0]}"
+    nomes = [f"{curto(m)}/{a}" for a, m in ps]
+    return ", ".join(nomes[:-1]) + " e " + nomes[-1]
+
+
 def limites_mes(ano: int, mes: int):
     ini = dt.date(ano, mes, 1)
     fim = dt.date(ano + (mes == 12), mes % 12 + 1, 1) - dt.timedelta(days=1)
@@ -313,6 +334,46 @@ def classificar(d: dict, cnpj: str):
     if d["tomador_doc"] == cnpj:
         return "servico_tomado"
     return None
+
+
+def rbt12_nfse(docs: list, cnpj: str, ano: int, mes: int) -> dict:
+    """RBT12 básico, sem nenhuma consulta a mais: soma das NFS-e prestadas (Ambiente Nacional) dos 12 meses ANTERIORES ao mês
+    consultado, usando os documentos que a consulta já baixou (o ADN entrega todo o histórico a cada busca). Não inclui NF-e de
+    mercadorias nem notas emitidas fora do Ambiente Nacional. Devolve {valor, qtd, meses_com_notas, por_mes: {(ano, mes): valor},
+    de, ate}; com `valor` 0 não há o que sugerir."""
+    meses, a, m = [], ano, mes
+    for _ in range(12):
+        m -= 1
+        if m == 0:
+            a, m = a - 1, 12
+        meses.append((a, m))
+    meses.reverse()
+    ini, fim = limites_mes(*meses[0])[0], limites_mes(*meses[-1])[1]
+    canceladas, lidos = set(), []
+    for x in docs:
+        if not x.get("xml"):
+            continue
+        try:
+            d = parse_documento(x["xml"])
+        except ET.ParseError:
+            continue
+        if d["kind"] == "evento" and d.get("cancelamento"):
+            canceladas.add(d["chave"])
+        elif d["kind"] == "nfse":
+            lidos.append(d)
+    por_mes, vistos, qtd = {k: 0.0 for k in meses}, set(), 0
+    for d in lidos:
+        dia = data_do_doc(d)
+        if dia is None or not (ini <= dia <= fim) or classificar(d, cnpj) != "servico_prestado":
+            continue
+        if d["chave"] in vistos or d["chave"] in canceladas:
+            continue
+        vistos.add(d["chave"])
+        por_mes[(dia.year, dia.month)] += d["valor"]
+        qtd += 1
+    por_mes = {k: round(v, 2) for k, v in por_mes.items()}
+    return {"valor": round(sum(por_mes.values()), 2), "qtd": qtd, "por_mes": por_mes, "de": meses[0], "ate": meses[-1],
+            "meses_com_notas": sum(1 for v in por_mes.values() if v > 0)}
 
 
 def montar_plano(docs: list, cnpj: str, ano: int, mes: int, tipos: set, prefixos: dict = None,

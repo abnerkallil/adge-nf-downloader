@@ -133,6 +133,39 @@ def principal():
         bn.destroy()
         passo("saldo líquido muda de cor (positivo/negativo)")
 
+        # --- consulta de períodos em lote (v1.7.5): vem desmarcada; marcada, cada mês clicado entra na mesma busca
+        lote = SessaoFalsa([(0, [
+            item(1, xml_nfse("6" * 50, valor="100.00", dh="2026-08-10T10:00:00-03:00", num="6", **eu)),
+            item(2, xml_nfse("7" * 50, valor="200.00", dh="2026-09-10T10:00:00-03:00", num="7", **eu)),
+        ])])
+        (t / "lote").mkdir()
+        bl = B.DialogoBusca(app, store, dict(emp, destino=str(t / "lote")), sessao=lote)      # pasta à parte: não mistura com os outros testes
+        bl.update()
+        assert bl.v_lote.get() is False
+        bl.ano = 2026; bl._escolher_mes(8); bl._escolher_mes(7)
+        assert bl._periodos() == [(2026, 8)], bl._periodos()            # sem o lote, clicar troca o mês
+        bl._escolher_mes(8)
+        bl.v_lote.set(True); bl._alternar_lote()
+        bl._escolher_mes(7)                                              # com o lote, agosto entra junto com setembro
+        assert bl._periodos() == [(2026, 8), (2026, 9)], bl._periodos()
+        assert "2 meses em lote" in bl.l_periodo.cget("text"), bl.l_periodo.cget("text")
+        bl._buscar()
+        assert esperar(lambda: bl.resultado is not None, app), f"busca em lote não terminou: {mensagens}"
+        assert bl.lote_periodos == [(2026, 8), (2026, 9)] and bl.resultado["mes"] == 8
+        assert abs(bl.resultado["resumo"]["servico_prestado"]["valor"] - 100.0) < 0.001
+        assert "300,00" in bl.l_lote_resumo.cget("text"), bl.l_lote_resumo.cget("text")
+        bl._mostrar_periodo(2026, 9)
+        assert bl.resultado["mes"] == 9 and abs(bl.resultado["resumo"]["servico_prestado"]["valor"] - 200.0) < 0.001
+        bl._gravar()                                                     # grava os dois meses (cada um na sua pasta)
+        pastas = {p.parent.name for p in (t / "lote").rglob("*.xml")}
+        assert any("08" in n for n in pastas) and any("09" in n for n in pastas), pastas
+        assert bl.salvo and {h["mes"] for h in store.preferencias["historico"]} == {8, 9}      # cada mês entra no histórico
+        store.preferencias["historico"] = []
+        bl.v_lote.set(False); bl._alternar_lote()
+        assert len(bl._periodos()) == 1
+        bl.destroy()
+        passo("consulta em lote: marcar vários meses, uma busca, trocar o mês exibido e gravar todos")
+
         # filtros, ordenação e detalhe da nota
         b.v_filtro.set("custo"); b._preencher_tabela()
         assert len(b.tv.get_children()) == 1

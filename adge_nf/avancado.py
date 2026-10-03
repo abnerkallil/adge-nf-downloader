@@ -66,7 +66,7 @@ class DialogoConfirmaFiscal(Modal):
 
 
 class DialogoDadosFiscais(Modal):
-    def __init__(self, pai, store, emp: dict):
+    def __init__(self, pai, store, emp: dict, sugestao_rbt12: dict = None):
         super().__init__(pai, "Dados fiscais da empresa")
         self.store, self.emp, self.salvou = store, emp, False
         f = {**regimes.fiscal_padrao(), **(emp.get("fiscal") or {})}
@@ -105,6 +105,8 @@ class DialogoDadosFiscais(Modal):
                                                               state="readonly", width=6, font=F(10)), "32% serviços em geral")
         linha(7, "Outras despesas mensais (R$)", ui.Campo(g, self.v_outras, largura=18), "para o Lucro Real")
         linha(8, "", Interruptor(g, "Profissão regulamentada (redução de 30% na reforma)", self.v_prof))
+        if sugestao_rbt12 and sugestao_rbt12.get("valor", 0) > 0:
+            self._sugestao(sugestao_rbt12)
         self.l_erro = rotulo(self, "", 10, cor="erro", largura=px(560))
         self.l_erro.pack(anchor="w", pady=(8, 0))
         lin = tk.Frame(self, bg=P.fundo)
@@ -113,6 +115,18 @@ class DialogoDadosFiscais(Modal):
         Botao(lin, "Salvar e continuar", self._salvar, estilo="primario").pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda *_: self.destroy())
         self.mostrar()
+
+    def _sugestao(self, r: dict):
+        """RBT12 calculado das NFS-e que a própria consulta já trouxe (nenhuma consulta a mais)."""
+        (a0, m0), (a1, m1) = r["de"], r["ate"]
+        bloco = tk.Frame(self, bg=P.fundo)
+        bloco.pack(fill="x", pady=(10, 0))
+        rotulo(bloco, f"Sugestão pelas notas consultadas: R$ {num_br(r['valor'])} em NFS-e prestadas de {m0:02d}/{a0} a {m1:02d}/{a1} "
+                      f"({r['qtd']} nota(s) em {r['meses_com_notas']} mês(es) com movimento). Só entram serviços do Ambiente Nacional: "
+                      "NF-e de mercadorias e notas emitidas fora dele ficam de fora, então confira antes de usar.",
+               9, cor="suave", largura=px(560)).pack(anchor="w")
+        Botao(bloco, f"Usar R$ {num_br(r['valor'])} como receita dos 12 meses", lambda: self.v_rbt.set(num_br(r["valor"])),
+              estilo="suave", pady=5).pack(anchor="w", pady=(6, 0))
 
     def _salvar(self):
         try:
@@ -349,7 +363,7 @@ class DialogoAvancado(Modal):
         self._render_comparativo()
 
     def _editar_dados(self):
-        d = DialogoDadosFiscais(self, self.store, self.emp)
+        d = DialogoDadosFiscais(self, self.store, self.emp, self.r.get("rbt12_nfse"))
         self.wait_window(d)
         self._render_comparativo()
         self.grab_set()

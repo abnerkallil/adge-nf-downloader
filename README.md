@@ -16,6 +16,10 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
   em verde quando positivo e vermelho quando negativo.
 - **NF-e (modelo 55)**, opcional e desligada por padrão: vendas, compras e devoluções entram no mesmo relatório, com marcas
   para escolher o que conta nos totais, no gráfico e na análise de regimes. Veja a seção **NF-e** abaixo.
+- **Consulta de períodos em lote** (v1.7.5): uma caixa abaixo da lista de meses, desmarcada por padrão, inclui na mesma busca cada
+  mês clicado. As fontes são consultadas uma vez só e o resultado mostra cada mês, com o total do lote; gravar salva todos.
+- **RBT12 sugerido** (v1.7.5): em **Informações avançadas**, a receita dos 12 meses anteriores é sugerida a partir das NFS-e
+  prestadas já baixadas na consulta, sem consulta extra (não inclui NF-e de mercadorias nem notas fora do Ambiente Nacional).
 - **Nota Paulistana** (Prefeitura de São Paulo), busca separada do Ambiente Nacional, só para conferência. Veja a seção abaixo.
 - Organização automática dos arquivos em pastas por cliente, ano e mês, com nomes padronizados.
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.

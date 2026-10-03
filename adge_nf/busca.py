@@ -69,6 +69,10 @@ class DialogoBusca(Modal):
         self.ordem = (None, False)
         self.ano, mes = periodo if periodo else mes_anterior()
         self.v_mes = tk.StringVar(value=core.MESES_TELA[mes - 1])
+        self.v_lote = tk.BooleanVar(value=False)              # consulta de períodos em lote: desmarcada por padrão
+        self.periodos_sel = {(self.ano, mes)}                 # meses marcados (só vale mais de um com o lote ligado)
+        self.lote_periodos, self.lote_dados, self.lote_planos = [], None, {}
+        self._cats_vistas = set()
         self.v_prest = tk.BooleanVar(value=emp["tipos"].get("prestado", True))
         self.v_tom = tk.BooleanVar(value=emp["tipos"].get("tomado", True))
         self.v_nfe = tk.BooleanVar(value=bool(emp.get("nfe")))
@@ -128,8 +132,10 @@ class DialogoBusca(Modal):
             b = Botao(grade, nome[:3], lambda i=i: self._escolher_mes(i), estilo="secundario", padx=6, pady=5, largura=54, tam=10)
             b.grid(row=i // 6, column=i % 6, padx=(0, 5), pady=(0, 5))
             self.b_meses.append(b)
-        self.l_periodo = rotulo(esq, "", 10, cor="suave")
-        self.l_periodo.pack(anchor="w", pady=(2, 0))
+        self.m_lote = Marcador(esq, "Consulta de períodos em lote", self.v_lote, self._alternar_lote, tom="azul", tam=9)
+        self.m_lote.pack(anchor="w", pady=(2, 0))
+        self.l_periodo = rotulo(esq, "", 10, cor="suave", largura=px(420))
+        self.l_periodo.pack(anchor="w", pady=(4, 0))
 
         acao = tk.Frame(t, bg=P.superficie)
         acao.pack(side="right", anchor="s", padx=(16, 0))
@@ -174,6 +180,10 @@ class DialogoBusca(Modal):
         Botao(self.f_botoes, "Fechar", self._fechar, estilo="fantasma").pack(side="right")
 
     def _montar_resultado(self, pai):
+        self.f_lote = tk.Frame(pai, bg=P.fundo)               # só aparece depois de uma consulta em lote
+        rotulo(self.f_lote, "Meses desta consulta (clique para ver cada um; \"Baixar XMLs\" grava todos)", 10, "bold", "verde_escuro").pack(anchor="w")
+        self.f_lote_botoes = tk.Frame(self.f_lote, bg=P.fundo)
+        self.l_lote_resumo = rotulo(self.f_lote, "", 9, cor="suave", largura=px(980))
         self.f_bloco = tk.Frame(pai, bg=P.fundo)
         self.f_bloco.pack(fill="x", pady=(12, 0))
         cards = tk.Frame(self.f_bloco, bg=P.fundo)
@@ -246,19 +256,47 @@ class DialogoBusca(Modal):
     def _mes_num(self) -> int:
         return core.MESES_TELA.index(self.v_mes.get()) + 1
 
+    def _periodos(self) -> list:
+        """Períodos da busca: o mês escolhido ou, com o lote ligado, todos os meses marcados (em ordem)."""
+        if self.v_lote.get() and self.periodos_sel:
+            return sorted(self.periodos_sel)
+        return [(self.ano, self._mes_num())]
+
     def _atualizar_meses(self):
-        sel = self._mes_num()
+        sel = self._periodos()
+        marcados = set(sel)
         for i, b in enumerate(self.b_meses):
-            b.config(style="primario" if i + 1 == sel else "secundario")
-        ini, fim = core.limites_mes(self.ano, sel)
-        self.l_periodo.config(text=f"{core.MESES_TELA[sel - 1]} de {self.ano}  ·  de {ini:%d/%m/%Y} a {fim:%d/%m/%Y}")
+            b.config(style="primario" if (self.ano, i + 1) in marcados else "secundario")
+        if len(sel) == 1:
+            ano, mes = sel[0]
+            ini, fim = core.limites_mes(ano, mes)
+            self.l_periodo.config(text=f"{core.MESES_TELA[mes - 1]} de {ano}  ·  de {ini:%d/%m/%Y} a {fim:%d/%m/%Y}")
+        else:
+            self.l_periodo.config(text=f"{len(sel)} meses em lote: {core.formatar_periodos(sel)}")
         self.l_ano.config(text=str(self.ano))
 
     def _atualizar_periodo(self):
         self._atualizar_meses()
 
+    def _alternar_lote(self):
+        """Liga/desliga o lote. Ligando, o mês que estava escolhido continua marcado; desligando, volta a valer um mês só."""
+        if self.v_lote.get():
+            self.periodos_sel = {(self.ano, self._mes_num())}
+        else:
+            ano, mes = (sorted(self.periodos_sel)[0] if self.periodos_sel else (self.ano, self._mes_num()))
+            self.ano = ano
+            self.v_mes.set(core.MESES_TELA[mes - 1])
+            self.periodos_sel = {(ano, mes)}
+        self._atualizar_meses()
+
     def _escolher_mes(self, i):
-        self.v_mes.set(core.MESES_TELA[i])
+        if self.v_lote.get():
+            self.periodos_sel = core.alternar_periodo(self.periodos_sel, self.ano, i + 1)
+            if (self.ano, i + 1) in self.periodos_sel:
+                self.v_mes.set(core.MESES_TELA[i])
+        else:
+            self.v_mes.set(core.MESES_TELA[i])
+            self.periodos_sel = {(self.ano, i + 1)}
         self._atualizar_meses()
 
     def _mudar_ano(self, d):
@@ -270,12 +308,14 @@ class DialogoBusca(Modal):
     def _ir_mes_anterior(self):
         self.ano, m = mes_anterior()
         self.v_mes.set(core.MESES_TELA[m - 1])
+        self.periodos_sel = {(self.ano, m)}
         self._atualizar_meses()
 
     def _ir_este_mes(self):
         h = dt.date.today()
         self.ano = h.year
         self.v_mes.set(core.MESES_TELA[h.month - 1])
+        self.periodos_sel = {(self.ano, h.month)}
         self._atualizar_meses()
 
     # ------------------------------------------------------------------ NF-e: contador da SEFAZ
@@ -340,7 +380,10 @@ class DialogoBusca(Modal):
         self.l_destino.pack_forget()
         self.cancelar_flag = False
         self._ocupado(True)
-        mes, ano = self._mes_num(), self.ano
+        periodos = self._periodos()
+        ano, mes = periodos[0]
+        self.lote_periodos = periodos if len(periodos) > 1 else []
+        self.lote_dados, self.lote_planos, self._cats_vistas = None, {}, set()
         self.consulta = (emp, ano, mes)
         tem_nfse = bool(emp["tipos"]["prestado"] or emp["tipos"]["tomado"])
         self.docs_paul, self.msgs_paul = None, []
@@ -353,9 +396,12 @@ class DialogoBusca(Modal):
                                              cancelar=lambda: self.cancelar_flag, sessao=self.sessao_teste)
                 else:
                     docs, cnpj = [], re.sub(r"\D", "", emp["cnpj"])
-                ctx = self._trabalho_nfe(emp, senha, cnpj, ano, mes) if usar_nfe else None
+                ctx = self._trabalho_nfe(emp, senha, cnpj, ano, mes, periodos) if usar_nfe else None
                 if usar_paul:
-                    self._trabalho_paulistana(emp, senha, cnpj, ano, mes)
+                    self._trabalho_paulistana(emp, senha, cnpj, ano, mes, periodos)
+                if len(periodos) > 1:     # as fontes já foram consultadas uma vez só; aqui só se separa cada mês
+                    self.lote_planos = {(a, m): core.planejar(emp, docs, cnpj, a, m, None, {}, docs_nfe=ctx["docs"] if ctx else None,
+                                                              docs_paulistana=self.docs_paul)[0] for a, m in periodos}
                 self.fila.put(("ok", (docs, cnpj, ctx)))
             except Cancelado:
                 self.fila.put(("cancelado", None))
@@ -366,22 +412,27 @@ class DialogoBusca(Modal):
 
         threading.Thread(target=trabalho, daemon=True).start()
 
-    def _trabalho_paulistana(self, emp, senha, cnpj, ano, mes):
-        """Busca separada na Prefeitura de São Paulo. Falha aqui vira aviso: não derruba as outras fontes."""
+    def _trabalho_paulistana(self, emp, senha, cnpj, ano, mes, periodos=None):
+        """Busca separada na Prefeitura de São Paulo (um mês por vez; em lote, repete para cada mês marcado).
+        Falha aqui vira aviso: não derruba as outras fontes."""
         log = lambda m: self.fila.put(("log", m))   # noqa: E731
         try:
             sessao = self.sessao_paulistana_teste or paulistana.sessao_paulistana(emp["pfx"], senha)
             assinador = nfe.carregar_assinador(emp["pfx"], senha)
-            log("Consultando a Nota Paulistana na Prefeitura de São Paulo...")
-            r = paulistana.consultar(sessao, cnpj, ano, mes, assinador, prestadas=True, tomadas=True, log=log,
-                                     cancelar=lambda: self.cancelar_flag)
-            self.docs_paul, self.msgs_paul = r["docs"], r["msgs"]
+            docs, msgs = [], []
+            for a, m in (periodos or [(ano, mes)]):
+                log(f"Consultando a Nota Paulistana na Prefeitura de São Paulo ({core.mes_exibicao(m)}/{a})...")
+                r = paulistana.consultar(sessao, cnpj, a, m, assinador, prestadas=True, tomadas=True, log=log,
+                                         cancelar=lambda: self.cancelar_flag)
+                docs += r["docs"]
+                msgs += [x for x in r["msgs"] if x not in msgs]
+            self.docs_paul, self.msgs_paul = docs, msgs
         except ErroAdge as e:
             self.docs_paul, self.msgs_paul = [], [f"Nota Paulistana: {e}"]
         except ImportError as e:
             self.docs_paul, self.msgs_paul = [], [f"Nota Paulistana: instalação incompleta (falta um componente): {e}"]
 
-    def _trabalho_nfe(self, emp, senha, cnpj, ano, mes) -> dict:
+    def _trabalho_nfe(self, emp, senha, cnpj, ano, mes, periodos=None) -> dict:
         """Parte da NF-e da busca (roda fora da tela). Erros da SEFAZ não derrubam as NFS-e: viram avisos.
         O bloqueio da SEFAZ é gravado na hora; o NSU e os XMLs ficam na memória (`pend_docs`) até a pessoa salvar as notas."""
         h = self.hist
@@ -399,7 +450,7 @@ class DialogoBusca(Modal):
                 ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
                                    + (f": {r['mensagem']}" if r.get("mensagem") else "") + ").")
             if emp.get("nfe_ciencia"):
-                self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar)
+                self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar, periodos)
         except Cancelado:
             raise
         except ErroAdge as e:
@@ -420,9 +471,12 @@ class DialogoBusca(Modal):
                 saida.append(d)
         return saida
 
-    def _ciencia(self, sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar):
+    def _ciencia(self, sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar, periodos=None):
         h = self.hist
-        pend = nfe.pendentes_ciencia(self._juntar_docs(h.carregar_docs(), ctx["pend_docs"]), cnpj, ano, mes, h.ciencias())
+        todos = self._juntar_docs(h.carregar_docs(), ctx["pend_docs"])
+        pend = []
+        for a, m in (periodos or [(ano, mes)]):          # em lote, a ciência vale para todos os meses marcados (sem repetir chave)
+            pend += [c for c in nfe.pendentes_ciencia(todos, cnpj, a, m, h.ciencias()) if c not in pend]
         if not pend:
             return
         log(f"Registrando a Ciência da Operação de {len(pend)} nota(s)...")
@@ -512,6 +566,7 @@ class DialogoBusca(Modal):
         self.f_botoes.pack_forget()
         self.l_destino.pack_forget()
         emp = dict(self.emp, acao="calcular", tipos={"prestado": True, "tomado": True})
+        self.lote_periodos, self.lote_dados, self.lote_planos, self._cats_vistas = [], None, {}, set()
         self.consulta = (emp, self.ano, self._mes_num())
         self.docs_paul, self.msgs_paul = (sp if sp else None), []
         ctx = {"docs": nf, "msgs": [], "novos": 0, "ciencia": 0, "consultou": False, "pend_docs": [], "confirmado": True,
@@ -547,8 +602,8 @@ class DialogoBusca(Modal):
     def _concluir(self, docs, cnpj, ctx=None, reset=True):
         emp, ano, mes = self.consulta
         destino_prev, aviso_dest = None, ""
-        if self.pasta_manual:
-            emp = dict(emp, destino=self.pasta_manual, estrutura="direto")
+        if self.pasta_manual:       # em lote, cada mês ganha a sua subpasta (ano\mês) dentro da pasta escolhida
+            emp = dict(emp, destino=self.pasta_manual, estrutura="ano_mes" if self.lote_periodos else "direto")
         if self.da_pasta:
             aviso_dest = f"Notas lidas da pasta onde foram salvas: {self.da_pasta}. Nenhuma consulta nova foi feita."
         elif emp["acao"] == "calcular" and not self.pasta_manual:
@@ -568,20 +623,28 @@ class DialogoBusca(Modal):
             avisos = list(avisos) + list(ctx["msgs"])
         if self.docs_paul is not None:
             avisos = list(avisos) + list(self.msgs_paul) + self._avisos_paulistana(arquivos, bool(emp["tipos"]["prestado"] or emp["tipos"]["tomado"]))
+        # RBT12 básico aproveitando a mesma consulta (o ADN entrega todo o histórico): só com NFS-e prestadas e sem ler de pasta salva
+        rbt12 = core.rbt12_nfse(docs, cnpj, ano, mes) if (emp["tipos"]["prestado"] and not self.da_pasta and docs) else None
         self.resultado = {"emp": emp, "docs": docs, "cnpj": cnpj, "ano": ano, "mes": mes, "arquivos": arquivos,
                           "resumo": resumo, "avisos": avisos, "canceladas": extras.get("canceladas", []),
-                          "destino_ok": destino_prev is not None, "nfe": ctx, "aviso_dest": aviso_dest}
+                          "destino_ok": destino_prev is not None, "nfe": ctx, "aviso_dest": aviso_dest, "rbt12_nfse": rbt12}
         self.cats = self._categorias_presentes(arquivos, resumo)
         if reset:
             self.sel.ativos.clear()
             self.sel.ativos |= totais.padrao_ativos(self.cats)
         else:
             self.sel.ativos &= set(self.cats)
+            self.sel.ativos |= totais.padrao_ativos([c for c in self.cats if c not in self._cats_vistas])   # categoria nova de outro mês
+        self._cats_vistas |= set(self.cats)
+        if self.lote_periodos:
+            self.lote_dados = (docs, cnpj, ctx)
         if self.da_pasta:
             self.l_status.config(text="Notas lidas da pasta salva (sem nova consulta).")
         else:
-            self.l_status.config(text=f"{len(docs)} documento(s) consultados." + (f" · {len(ctx['docs'])} documento(s) de NF-e." if ctx else ""))
+            self.l_status.config(text=f"{len(docs)} documento(s) consultados." + (f" · {len(ctx['docs'])} documento(s) de NF-e." if ctx else "")
+                                 + (f" · {len(self.lote_periodos)} meses em uma só consulta." if self.lote_periodos else ""))
         self._montar_marcadores()
+        self._montar_lote()
         self.l_detalhe.config(text="Selecione uma nota para ver os detalhes.")
 
         for w in (self.b_avancado, self.b_copiar, self.b_gravar, self.b_pasta, self.b_csv):
@@ -636,6 +699,54 @@ class DialogoBusca(Modal):
         self.l_marcas_dica.config(text="  ".join(dicas))
         (self.l_marcas_dica.pack if dicas else self.l_marcas_dica.pack_forget)(**({"anchor": "w"} if dicas else {}))
 
+    def _montar_lote(self):
+        """Consulta em lote: uma linha de botões (um por mês consultado) para alternar o mês mostrado e o resumo de todos os meses."""
+        self.f_lote.pack_forget()
+        for w in self.f_lote_botoes.winfo_children():
+            w.destroy()
+        if not self.lote_periodos or not self.resultado:
+            return
+        atual = (self.resultado["ano"], self.resultado["mes"])
+        ws = []
+        for a, m in self.lote_periodos:
+            ws.append(Botao(self.f_lote_botoes, f"{core.MESES_TELA[m - 1][:3]}/{a}", lambda a=a, m=m: self._mostrar_periodo(a, m),
+                            estilo="primario" if (a, m) == atual else "secundario", padx=10, pady=4, tam=9))
+        ui.fluxo(self.f_lote_botoes, ws)
+        self.f_lote_botoes.pack(fill="x", pady=(4, 0))
+        self.l_lote_resumo.pack(anchor="w")
+        self.f_lote.pack(fill="x", pady=(10, 0), before=self.f_bloco)
+        self._atualizar_lote()
+
+    def _atualizar_lote(self):
+        """Resumo mês a mês (com a seleção atual das categorias) e o total do lote."""
+        if not self.lote_periodos or not self.lote_planos:
+            return
+        linhas, fat, comp = [], 0.0, 0.0
+        for a, m in self.lote_periodos:
+            soma = totais.totais(self.lote_planos.get((a, m), []), self.sel.ativos)
+            fat += soma["faturamento"]
+            comp += soma["compras"]
+            partes = []
+            if self._tem_lado("receita"):
+                partes.append(f"faturamento {moeda(soma['faturamento'])}")
+            if self._tem_lado("custo"):
+                partes.append(f"compras {moeda(soma['compras'])}")
+            linhas.append(f"{core.MESES_TELA[m - 1][:3]}/{a}: " + " · ".join(partes))
+        tot = []
+        if self._tem_lado("receita"):
+            tot.append(f"faturamento {moeda(fat)}")
+        if self._tem_lado("custo"):
+            tot.append(f"compras {moeda(comp)}")
+        self.l_lote_resumo.config(text="   |   ".join(linhas) + "\nTotal do lote: " + " · ".join(tot))
+
+    def _mostrar_periodo(self, ano, mes):
+        """Troca o mês exibido de uma consulta em lote, sem consultar nada de novo."""
+        if self.trabalhando or not self.lote_dados or (ano, mes) == (self.resultado["ano"], self.resultado["mes"]):
+            return
+        docs, cnpj, ctx = self.lote_dados
+        self.consulta = (self.consulta[0], ano, mes)
+        self._concluir(docs, cnpj, ctx, reset=False)
+
     def _mudou_selecao(self):
         """Qualquer mudança nas marcas refaz cartões, tabela e botões; a janela de informações avançadas escuta a mesma seleção."""
         if not self.resultado:
@@ -646,6 +757,7 @@ class DialogoBusca(Modal):
         self._atualizar_totais()
         self._preencher_tabela()
         self._atualizar_botoes()
+        self._atualizar_lote()
 
     def _atualizar_totais(self):
         r = self.resultado
@@ -812,6 +924,9 @@ class DialogoBusca(Modal):
         r = self.resultado
         if not r:
             return
+        if self.lote_periodos and self.lote_dados:
+            self._gravar_lote()
+            return
         n = len([a for a in r["arquivos"] if a["cat"] in self.sel.ativos and not a.get("sem_xml")])
         if not n:
             return
@@ -830,13 +945,65 @@ class DialogoBusca(Modal):
         if ui.perguntar(self, "Pronto!", f"{resumo}.\n\nPasta:\n{destino}", sim="Abrir a pasta", nao="Fechar"):
             ui.abrir_pasta(destino)
 
+    def _gravar_lote(self):
+        """Consulta em lote: grava cada mês marcado na sua pasta (mesma regra de pastas de um mês só), registra cada um no
+        histórico e só no fim confirma o NSU da NF-e (uma vez, pois a SEFAZ foi consultada uma vez só)."""
+        r = self.resultado
+        docs, cnpj, ctx = self.lote_dados
+        emp = r["emp"]
+        if not ui.perguntar(self, f"Gravar os XMLs de {len(self.lote_periodos)} meses?",
+                            f"Meses: {core.formatar_periodos(self.lote_periodos)}.\n\nCada mês vai para a sua pasta, do mesmo jeito que numa consulta de um mês só "
+                            "(com \"Escolher pasta...\", dentro da pasta escolhida, em ano\\mês). Arquivos que já existirem não serão sobrescritos.",
+                            sim="Gravar", nao="Cancelar"):
+            return
+        gravados, vazios, falhas, pastas = 0, [], [], []
+        for a, m in self.lote_periodos:
+            nome = f"{core.MESES_TELA[m - 1][:3]}/{a}"
+            try:
+                destino_prev, _ = core.resolver_destino(Path(emp["destino"]), emp["estrutura"], a, m, criar=False)
+                extras = {}
+                arquivos, resumo, _av = core.planejar(emp, docs, cnpj, a, m, destino_prev, extras,
+                                                      docs_nfe=ctx["docs"] if ctx else None, docs_paulistana=self.docs_paul)
+                if not any(x["cat"] in self.sel.ativos and not x.get("sem_xml") for x in arquivos):
+                    vazios.append(nome)
+                    continue
+                destino, contagem = core.salvar_notas(emp, arquivos, resumo, cnpj, a, m, canceladas=extras.get("canceladas", []),
+                                                      ativos=self.sel.ativos)
+            except (ErroAdge, OSError) as e:
+                falhas.append(f"{nome}: {e}")
+                continue
+            gravados += sum(contagem.values())
+            pastas.append(str(destino))
+            self._registrar_salvo_periodo(a, m, arquivos, resumo, destino)
+        if pastas:
+            self.salvo, self.pasta_salva = True, pastas[-1]
+            self._confirmar_nsu(self.resultado)
+        texto = f"{gravados} XML(s) em {len(pastas)} mês(es)."
+        if vazios:
+            texto += f"\nSem notas marcadas (nada a gravar): {', '.join(vazios)}."
+        if falhas:
+            texto += "\n\nNão consegui gravar:\n" + "\n".join(falhas)
+        if pastas:
+            texto += f"\n\nÚltima pasta:\n{pastas[-1]}"
+            if ui.perguntar(self, "Pronto!", texto, sim="Abrir a pasta", nao="Fechar"):
+                ui.abrir_pasta(pastas[-1])
+        else:
+            ui.erro(self, "Não consegui gravar os arquivos", texto)
+
+    def _registrar_salvo_periodo(self, ano, mes, arquivos, resumo, destino):
+        """Entrada do histórico de um mês (só depois de salvar)."""
+        soma = totais.totais(arquivos, self.sel.ativos)
+        registrar_historico(self.store, self.emp, ano, mes, resumo, len(arquivos),
+                            soma["faturamento"] if self._tem_lado("receita") else None,
+                            soma["compras"] if self._tem_lado("custo") else None, pasta=str(destino))
+
     def _registrar_salvo(self, destino):
         """Só depois de salvar: a consulta entra no histórico (com o caminho da pasta) e o NSU da NF-e avança."""
         r = self.resultado
-        soma = totais.totais(r["arquivos"], self.sel.ativos)
-        registrar_historico(self.store, self.emp, r["ano"], r["mes"], r["resumo"], len(r["arquivos"]),
-                            soma["faturamento"] if self._tem_lado("receita") else None,
-                            soma["compras"] if self._tem_lado("custo") else None, pasta=str(destino))
+        self._registrar_salvo_periodo(r["ano"], r["mes"], r["arquivos"], r["resumo"], destino)
+        self._confirmar_nsu(r)
+
+    def _confirmar_nsu(self, r):
         ctx = r.get("nfe")
         if ctx and ctx.get("consultou") and not ctx.get("confirmado") and self.hist is not None:
             try:

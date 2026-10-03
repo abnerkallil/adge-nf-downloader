@@ -75,6 +75,11 @@ class Consulta(unittest.TestCase):
         self.assertIsNone(A.consultar(Sessao(release("v0.9.0")), repo=REPO, versao="1.0.0"))
         self.assertIsNotNone(A.consultar(Sessao(release("v1.10.0")), repo=REPO, versao="1.9.0"))  # 10 > 9, não texto
 
+    def test_limite_da_api_nao_vira_sem_novidade(self):
+        for codigo in (403, 429, 500):
+            with self.assertRaises(ErroAdge):
+                A.consultar(Sessao(code_release=codigo), repo=REPO, versao="1.0.0")
+
     def test_sem_release_ou_sem_repo(self):
         self.assertIsNone(A.consultar(Sessao(code_release=404), repo=REPO, versao="1.0.0"))
         self.assertIsNone(A.consultar(Sessao(release()), repo="", versao="1.0.0"))

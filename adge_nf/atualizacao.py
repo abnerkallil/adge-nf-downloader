@@ -84,8 +84,11 @@ def consultar(sessao=None, repo: str = None, versao: str = VERSAO):
         s = requests
     r = s.get(f"https://api.github.com/repos/{repo}/releases/latest", timeout=10,
               headers={"Accept": "application/vnd.github+json"})
+    if r.status_code == 404:
+        return None  # o repositório ainda não tem nenhuma Release
     if r.status_code != 200:
-        return None  # sem Release ainda, sem internet ou limite da API: não incomoda o usuário
+        # limite de consultas do GitHub (403/429), erro do servidor etc.: não é "sem novidade", então avisa que não conseguiu
+        raise ErroAdge(f"O GitHub não respondeu à consulta de versões (HTTP {r.status_code}).")
     j = r.json()
     tag = j.get("tag_name", "")
     if not tag or _tupla(tag) <= _tupla(versao):

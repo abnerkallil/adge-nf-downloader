@@ -69,10 +69,12 @@ def _doc(cnpj: str) -> str:
     return f"<CNPJ>{cnpj}</CNPJ>"
 
 
+# No esquema da prefeitura só a raiz e a assinatura têm namespace: o Cabecalho e tudo dentro dele não (elementFormDefault padrão),
+# por isso o xmlns="" no Cabecalho. Sem isso a prefeitura recusa o XML (erro 1001, "invalid child element 'Cabecalho'").
 def pedido_periodo(remetente: str, cnpj: str, inscricao: str, ini: dt.date, fim: dt.date, pagina: int, assinador: dict,
                    versao: str = "2") -> str:
     insc = f"<Inscricao>{int(inscricao)}</Inscricao>" if inscricao else ""
-    corpo = (f'<PedidoConsultaNFePeriodo xmlns="{NS}"><Cabecalho Versao="{versao}">'
+    corpo = (f'<PedidoConsultaNFePeriodo xmlns="{NS}"><Cabecalho Versao="{versao}" xmlns="">'
              f'<CPFCNPJRemetente>{_doc(remetente)}</CPFCNPJRemetente><CPFCNPJ>{_doc(cnpj)}</CPFCNPJ>{insc}'
              f'<dtInicio>{ini.isoformat()}</dtInicio><dtFim>{fim.isoformat()}</dtFim><NumeroPagina>{int(pagina)}</NumeroPagina>'
              f'</Cabecalho></PedidoConsultaNFePeriodo>')
@@ -80,8 +82,8 @@ def pedido_periodo(remetente: str, cnpj: str, inscricao: str, ini: dt.date, fim:
 
 
 def pedido_cnpj(remetente: str, cnpj: str, assinador: dict, versao: str = "2") -> str:
-    corpo = (f'<PedidoConsultaCNPJ xmlns="{NS}"><Cabecalho Versao="{versao}"><CPFCNPJRemetente>{_doc(remetente)}</CPFCNPJRemetente>'
-             f'</Cabecalho><CNPJContribuinte>{_doc(cnpj)}</CNPJContribuinte></PedidoConsultaCNPJ>')
+    corpo = (f'<PedidoConsultaCNPJ xmlns="{NS}"><Cabecalho Versao="{versao}" xmlns=""><CPFCNPJRemetente>{_doc(remetente)}</CPFCNPJRemetente>'
+             f'</Cabecalho><CNPJContribuinte xmlns="">{_doc(cnpj)}</CNPJContribuinte></PedidoConsultaCNPJ>')
     return assinar(corpo, assinador)
 
 
@@ -180,6 +182,7 @@ def inscricoes(sessao, remetente: str, cnpj: str, assinador: dict, log=lambda *_
     """Inscrições Municipais (CCM) ligadas ao CNPJ que emitem NFS-e."""
     def monta(v):
         return pedido_cnpj(remetente, cnpj, assinador, v)
+    erros = []
     for versao in VERSOES:
         raiz = _enviar(sessao, "cnpj", versao, monta(versao))
         if _txt(raiz, "Sucesso").lower() == "true":
@@ -188,7 +191,7 @@ def inscricoes(sessao, remetente: str, cnpj: str, assinador: dict, log=lambda *_
         erros = _eventos(raiz, "Erro")
         if not _erro_de_versao(erros):
             raise ErroAdge("A Prefeitura de São Paulo não informou a Inscrição Municipal do CNPJ: " + ("; ".join(erros) or "sem detalhe") + ".")
-    raise ErroAdge("A Prefeitura de São Paulo recusou a consulta da Inscrição Municipal.")
+    raise ErroAdge("A Prefeitura de São Paulo recusou a consulta da Inscrição Municipal: " + ("; ".join(erros) or "sem detalhe") + ".")
 
 
 def baixar_lado(sessao, metodo: str, remetente: str, cnpj: str, inscricao: str, ini: dt.date, fim: dt.date, assinador: dict,

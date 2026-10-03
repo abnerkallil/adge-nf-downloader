@@ -30,10 +30,14 @@ class TestAssinatura(unittest.TestCase):
         msg = paulistana.pedido_periodo(EU, EU, IM, core.limites_mes(2026, 8)[0], core.limites_mes(2026, 8)[1], 2, a)
         raiz = ET.fromstring(msg)
         ns = {"d": paulistana.DSIG, "n": paulistana.NS}
-        self.assertEqual(raiz.find("n:Cabecalho/n:NumeroPagina", ns).text, "2")
-        self.assertEqual(raiz.find("n:Cabecalho/n:dtInicio", ns).text, "2026-08-01")
-        self.assertEqual(raiz.find("n:Cabecalho/n:Inscricao", ns).text, IM)
-        self.assertEqual(raiz.find("n:Cabecalho/n:CPFCNPJ/n:CNPJ", ns).text, EU)
+        self.assertEqual(raiz.find("Cabecalho/NumeroPagina", ns).text, "2")
+        self.assertEqual(raiz.find("Cabecalho/dtInicio", ns).text, "2026-08-01")
+        self.assertEqual(raiz.find("Cabecalho/Inscricao", ns).text, IM)
+        self.assertEqual(raiz.find("Cabecalho/CPFCNPJ/CNPJ", ns).text, EU)
+        # só a raiz e a assinatura têm namespace; o cabeçalho e o que há dentro dele não (a prefeitura recusa de outro jeito, erro 1001)
+        self.assertEqual(raiz.tag, "{" + paulistana.NS + "}PedidoConsultaNFePeriodo")
+        self.assertEqual(raiz.find("Cabecalho").tag, "Cabecalho")
+        self.assertIn('<Cabecalho Versao="2" xmlns="">', msg)
         sig = raiz.find("d:Signature", ns)
         self.assertIsNotNone(sig)
         # digest: documento sem a assinatura, canonicalizado
@@ -48,6 +52,12 @@ class TestAssinatura(unittest.TestCase):
         valor = base64.b64decode(sig.find("d:SignatureValue", ns).text)
         a["cert"].public_key().verify(valor, ET.canonicalize(paulistana._com_ns(info, paulistana.DSIG)).encode(),
                                       padding.PKCS1v15(), hashes.SHA1())
+
+    def test_pedido_de_cnpj_tambem_sem_namespace_no_miolo(self):
+        msg = paulistana.pedido_cnpj(EU, EU, assinador_falso())
+        raiz = ET.fromstring(msg)
+        self.assertEqual(raiz.find("Cabecalho/CPFCNPJRemetente/CNPJ").text, EU)
+        self.assertEqual(raiz.find("CNPJContribuinte/CNPJ").text, EU)
 
     def test_soap_e_cabecalhos(self):
         s = paulistana.soap("recebidas", "2", "<A/>")

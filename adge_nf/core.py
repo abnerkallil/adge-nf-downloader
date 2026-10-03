@@ -27,6 +27,12 @@ CATEGORIAS = {
                          "tipo": "Prestado", "lado": "receita", "sinal": 1, "grupo": "nfse", "padrao": True},
     "servico_tomado": {"prefixo": "NOTA FISCAL DE SERVIÇO TOMADO", "relatorio": "Serviço Tomado", "rotulo": "NFS-e tomadas",
                        "tipo": "Tomado", "lado": "custo", "sinal": 1, "grupo": "nfse", "padrao": True},
+    "paulistana_prestado": {"prefixo": "NOTA FISCAL PAULISTANA DE SERVIÇO PRESTADO", "relatorio": "Paulistana Prestado",
+                            "rotulo": "Paulistana prestadas", "tipo": "Paulistana prest.", "lado": "receita", "sinal": 1,
+                            "grupo": "nfse", "padrao": False, "origem": "paulistana"},
+    "paulistana_tomado": {"prefixo": "NOTA FISCAL PAULISTANA DE SERVIÇO TOMADO", "relatorio": "Paulistana Tomado",
+                          "rotulo": "Paulistana tomadas", "tipo": "Paulistana tom.", "lado": "custo", "sinal": 1,
+                          "grupo": "nfse", "padrao": False, "origem": "paulistana"},
     "nfe_saida": {"prefixo": "NOTA FISCAL ELETRÔNICA DE VENDA", "relatorio": "NF-e de Venda", "rotulo": "NF-e de venda",
                   "tipo": "Venda", "lado": "receita", "sinal": 1, "grupo": "nfe", "padrao": True},
     "nfe_entrada": {"prefixo": "NOTA FISCAL ELETRÔNICA DE COMPRA", "relatorio": "NF-e de Compra", "rotulo": "NF-e de compra",
@@ -466,7 +472,7 @@ def prefixos_da_empresa(emp: dict) -> dict:
 
 
 def planejar(emp: dict, docs: list, cnpj: str, ano: int, mes: int, destino: Path = None, extras: dict = None,
-             docs_nfe: list = None):
+             docs_nfe: list = None, docs_paulistana: list = None):
     """Plano do período. `docs_nfe` (documentos de NF-e vindos do histórico/consulta) soma as NF-e ao mesmo resultado."""
     limite = limite_para_destino(destino) if destino else LIMITE_NOME
     arquivos, resumo, avisos = montar_plano(docs, cnpj, ano, mes, tipos_da_empresa(emp), prefixos_da_empresa(emp), limite, extras)
@@ -476,6 +482,12 @@ def planejar(emp: dict, docs: list, cnpj: str, ano: int, mes: int, destino: Path
         arquivos = sorted(arquivos + a2, key=lambda a: (a["doc"].get("emissao") or "", str(a["doc"].get("numero") or "")))
         resumo.update(r2)
         avisos = avisos + av2
+    if docs_paulistana is not None:
+        from . import paulistana
+        a3, r3, av3 = paulistana.montar_plano(docs_paulistana, cnpj, ano, mes, limite, extras)
+        arquivos = sorted(arquivos + a3, key=lambda a: (a["doc"].get("emissao") or "", str(a["doc"].get("numero") or "")))
+        resumo.update(r3)
+        avisos = avisos + av3
     return arquivos, resumo, avisos
 
 

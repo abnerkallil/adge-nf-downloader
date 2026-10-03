@@ -21,8 +21,10 @@ NFE_COLUNAS = [("Nº", 12), ("Série", 8), ("Emissão", 13), ("Emitente", 38), (
                ("Frete", 14), ("IPI", 12), ("ICMS ST", 14), ("ICMS", 14), ("Valor total da nota", 18), ("Chave", 54)]
 RESUMO_COLUNAS = [("Emissão", 13), ("Emitente", 38), ("CNPJ emitente", 20), ("Valor", 16), ("Situação", 46), ("Chave", 54)]
 ROTULOS = {"servico_prestado": "Serviço prestado", "servico_tomado": "Serviço tomado",
+           "paulistana_prestado": "Nota Paulistana prestada", "paulistana_tomado": "Nota Paulistana tomada",
            **{c: v["rotulo"] for c, v in core.CATEGORIAS.items() if v["grupo"] == "nfe"}}
-ABAS = {"servico_prestado": "Prestado", "servico_tomado": "Tomado", "nfe_saida": "NF-e Venda", "nfe_entrada": "NF-e Compra",
+ABAS = {"servico_prestado": "Prestado", "servico_tomado": "Tomado", "paulistana_prestado": "Paulistana Prest.",
+        "paulistana_tomado": "Paulistana Tom.", "nfe_saida": "NF-e Venda", "nfe_entrada": "NF-e Compra",
         "nfe_devolucao_venda": "NF-e Dev. Venda", "nfe_devolucao_compra": "NF-e Dev. Compra", "nfe_outras": "NF-e Outras",
         "nfe_resumo": "NF-e sem ciência"}
 DINHEIRO = {"Valor", "Valor líquido", "ISS", "Valor dos produtos", "Desconto", "Frete", "IPI", "ICMS ST", "ICMS", "Valor total da nota"}
@@ -140,7 +142,7 @@ def gerar_xlsx(caminho, empresa: str, ano: int, mes: int, arquivos: list, resumo
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     estilos = dict(Alignment=Alignment, Border=Border, Font=Font, PatternFill=PatternFill, Side=Side)
     periodo = f"{core.mes_exibicao(mes)}/{ano}"
-    presentes = [c for c in core.ORDEM_CATEGORIAS if c in resumo and (core.CATEGORIAS[c]["grupo"] == "nfse"
+    presentes = [c for c in core.ORDEM_CATEGORIAS if c in resumo and ((core.CATEGORIAS[c]["grupo"] == "nfse" and not core.CATEGORIAS[c].get("origem"))
                  or resumo[c]["qtd"] or resumo[c]["canceladas"])]
     if ativos is None:
         ativos = totais.padrao_ativos(presentes)

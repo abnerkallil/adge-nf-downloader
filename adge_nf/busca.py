@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
 
-from . import NOME_APP, core, nfe, totais
+from . import NOME_APP, core, nfe, paulistana, totais
 from . import ui
 from .core import Cancelado, ErroAdge
 from .nfe_cache import HistoricoNFe
@@ -52,10 +52,11 @@ class DialogoBusca(Modal):
                ("parte", "Cliente / Fornecedor", 312, "w"), ("valor", "Valor", 120, "e"))
 
     def __init__(self, pai, store: Armazenamento, emp: dict, sessao=None, periodo=None, auto=False, sessao_nfe=None,
-                 base_historico=None):
+                 base_historico=None, sessao_paulistana=None):
         super().__init__(pai, f"Buscar notas — {emp['nome']}", margem=22)
         self.store, self.emp, self.sessao_teste = store, dict(emp), sessao
         self.sessao_nfe_teste, self.base_historico, self.hist = sessao_nfe, base_historico, None
+        self.sessao_paulistana_teste = sessao_paulistana
         self.sel = totais.Selecao()
         self.sel.ao_mudar(self._mudou_selecao)
         self.fila: "queue.Queue" = queue.Queue()
@@ -70,6 +71,8 @@ class DialogoBusca(Modal):
         self.v_prest = tk.BooleanVar(value=emp["tipos"].get("prestado", True))
         self.v_tom = tk.BooleanVar(value=emp["tipos"].get("tomado", True))
         self.v_nfe = tk.BooleanVar(value=bool(emp.get("nfe")))
+        self.v_paul = tk.BooleanVar(value=False)
+        self.docs_paul, self.msgs_paul = None, []
         self.v_acao = tk.StringVar(value=emp["acao"])
         self.v_filtro = tk.StringVar(value="todas")
         self.v_texto = tk.StringVar()
@@ -135,7 +138,8 @@ class DialogoBusca(Modal):
         Interruptor(tipos, "Serviço tomado", self.v_tom).pack(side="left", padx=(0, 14))
         tipos2 = tk.Frame(dir_, bg=P.superficie)
         tipos2.pack(anchor="w", pady=(6, 0))
-        Interruptor(tipos2, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe")).pack(side="left")
+        Interruptor(tipos2, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe")).pack(side="left", padx=(0, 14))
+        Interruptor(tipos2, "Nota Paulistana (Prefeitura de SP, só conferência)", self.v_paul).pack(side="left")
         rotulo(dir_, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 4))
         self.seg_acao = Segmentado(dir_, [("ambos", "Total e XMLs"), ("calcular", "Só o total"), ("baixar", "Só os XMLs")], self.v_acao)
         self.seg_acao.pack(anchor="w")
@@ -313,8 +317,9 @@ class DialogoBusca(Modal):
             return
         emp = self._emp_da_busca()
         usar_nfe = bool(emp.get("nfe") and self.v_nfe.get())
-        if not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"] or usar_nfe):
-            ui.avisar(self, "Marque pelo menos um tipo de nota", "Escolha serviço prestado, serviço tomado, NF-e ou mais de um.")
+        usar_paul = bool(self.v_paul.get())
+        if not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"] or usar_nfe or usar_paul):
+            ui.avisar(self, "Marque pelo menos um tipo de nota", "Escolha serviço prestado, serviço tomado, NF-e, Nota Paulistana ou mais de um.")
             return
         modo_nfe = self._modo_nfe() if usar_nfe else None
         if modo_nfe == "cancelar":
@@ -324,7 +329,8 @@ class DialogoBusca(Modal):
         except ErroAdge as e:
             ui.avisar(self, "Não consegui usar a senha salva", str(e))
             senha = ""
-        if not senha and not (usar_nfe and modo_nfe == "historico" and not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"])):
+        sem_rede = usar_nfe and modo_nfe == "historico" and not usar_paul and not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"])
+        if not senha and not sem_rede:
             senha = ui.pedir_texto(self, "Senha do certificado", f"Digite a senha do certificado de {emp['nome']}:", oculto=True,
                                    validar=lambda t: None if t else "Digite a senha.")
             if not senha:
@@ -337,6 +343,7 @@ class DialogoBusca(Modal):
         mes, ano = self._mes_num(), self.ano
         self.consulta = (emp, ano, mes)
         tem_nfse = bool(emp["tipos"]["prestado"] or emp["tipos"]["tomado"])
+        self.docs_paul, self.msgs_paul = None, []
 
         def trabalho():
             try:
@@ -346,6 +353,8 @@ class DialogoBusca(Modal):
                 else:
                     docs, cnpj = [], re.sub(r"\D", "", emp["cnpj"])
                 ctx = self._trabalho_nfe(emp, senha, cnpj, ano, mes, modo_nfe) if usar_nfe else None
+                if usar_paul:
+                    self._trabalho_paulistana(emp, senha, cnpj, ano, mes)
                 self.fila.put(("ok", (docs, cnpj, ctx)))
             except Cancelado:
                 self.fila.put(("cancelado", None))
@@ -355,6 +364,21 @@ class DialogoBusca(Modal):
                 self.fila.put(("erro", f"Erro inesperado: {e}"))
 
         threading.Thread(target=trabalho, daemon=True).start()
+
+    def _trabalho_paulistana(self, emp, senha, cnpj, ano, mes):
+        """Busca separada na Prefeitura de São Paulo. Falha aqui vira aviso: não derruba as outras fontes."""
+        log = lambda m: self.fila.put(("log", m))   # noqa: E731
+        try:
+            sessao = self.sessao_paulistana_teste or paulistana.sessao_paulistana(emp["pfx"], senha)
+            assinador = nfe.carregar_assinador(emp["pfx"], senha)
+            log("Consultando a Nota Paulistana na Prefeitura de São Paulo...")
+            r = paulistana.consultar(sessao, cnpj, ano, mes, assinador, prestadas=True, tomadas=True, log=log,
+                                     cancelar=lambda: self.cancelar_flag)
+            self.docs_paul, self.msgs_paul = r["docs"], r["msgs"]
+        except ErroAdge as e:
+            self.docs_paul, self.msgs_paul = [], [f"Nota Paulistana: {e}"]
+        except ImportError as e:
+            self.docs_paul, self.msgs_paul = [], [f"Nota Paulistana: instalação incompleta (falta um componente): {e}"]
 
     def _trabalho_nfe(self, emp, senha, cnpj, ano, mes, modo) -> dict:
         """Parte da NF-e da busca (roda fora da tela). Erros da SEFAZ não derrubam as NFS-e: viram avisos."""
@@ -484,7 +508,26 @@ class DialogoBusca(Modal):
     def _categorias_presentes(self, arquivos, resumo) -> list:
         return [c for c in core.ORDEM_CATEGORIAS
                 if any(a["cat"] == c for a in arquivos)
-                or (c in resumo and (core.CATEGORIAS[c]["grupo"] == "nfse" or resumo[c]["qtd"] or resumo[c]["canceladas"]))]
+                or (c in resumo and ((core.CATEGORIAS[c]["grupo"] == "nfse" and not core.CATEGORIAS[c].get("origem")) or resumo[c]["qtd"] or resumo[c]["canceladas"]))]
+
+    def _avisos_paulistana(self, arquivos, tem_adn) -> list:
+        av = ["Nota Paulistana: fonte separada, só para conferência. Fica desmarcada nos totais; marque-a para ver as notas "
+              "(marcar junto com as NFS-e do Ambiente Nacional soma as duas fontes)."]
+        if not tem_adn:
+            return av
+        c = paulistana.comparar(arquivos)
+        if not c["so_adn"] and not c["so_paulistana"]:
+            av.append(f"Conferência: as {c['em_ambos']} nota(s) de serviço batem entre o Ambiente Nacional e a Paulistana.")
+            return av
+        def lista(itens):
+            nums = [str(a["doc"].get("numero") or "?") for a in itens[:8]]
+            return ", ".join(nums) + (f" e mais {len(itens) - 8}" if len(itens) > 8 else "")
+        av.append(f"Conferência: {c['em_ambos']} nota(s) batem entre as fontes.")
+        if c["so_adn"]:
+            av.append(f"Só no Ambiente Nacional ({len(c['so_adn'])}): nº {lista(c['so_adn'])}.")
+        if c["so_paulistana"]:
+            av.append(f"Só na Paulistana ({len(c['so_paulistana'])}): nº {lista(c['so_paulistana'])}.")
+        return av
 
     def _concluir(self, docs, cnpj, ctx=None, reset=True):
         emp, ano, mes = self.consulta
@@ -501,9 +544,11 @@ class DialogoBusca(Modal):
                 aviso_dest = f"⚠ {e} Use \"Escolher pasta...\" para indicar onde salvar os XMLs."
         extras = {}
         arquivos, resumo, avisos = core.planejar(emp, docs, cnpj, ano, mes, destino_prev, extras,
-                                                 docs_nfe=ctx["docs"] if ctx else None)
+                                                 docs_nfe=ctx["docs"] if ctx else None, docs_paulistana=self.docs_paul)
         if ctx:
             avisos = list(avisos) + list(ctx["msgs"])
+        if self.docs_paul is not None:
+            avisos = list(avisos) + list(self.msgs_paul) + self._avisos_paulistana(arquivos, bool(emp["tipos"]["prestado"] or emp["tipos"]["tomado"]))
         self.resultado = {"emp": emp, "docs": docs, "cnpj": cnpj, "ano": ano, "mes": mes, "arquivos": arquivos,
                           "resumo": resumo, "avisos": avisos, "canceladas": extras.get("canceladas", []),
                           "destino_ok": destino_prev is not None, "nfe": ctx, "aviso_dest": aviso_dest}
@@ -715,7 +760,7 @@ class DialogoBusca(Modal):
                 partes.append("operação mista: classificada pela maior parte")
             self.l_detalhe.config(text="  ·  ".join(partes))
             return
-        prestado = a["cat"] == "servico_prestado"
+        prestado = info["lado"] == "receita"
         partes = [f"Nota {d.get('numero', '')} — {'prestada a' if prestado else 'tomada de'} {parte}",
                   f"Emitida em {data}", f"Valor {moeda(d.get('valor') or 0)}"]
         if d.get("iss"):

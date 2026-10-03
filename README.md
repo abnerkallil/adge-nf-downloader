@@ -16,6 +16,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
   em verde quando positivo e vermelho quando negativo.
 - **NF-e (modelo 55)**, opcional e desligada por padrão: vendas, compras e devoluções entram no mesmo relatório, com marcas
   para escolher o que conta nos totais, no gráfico e na análise de regimes. Veja a seção **NF-e** abaixo.
+- **Nota Paulistana** (Prefeitura de São Paulo), busca separada do Ambiente Nacional, só para conferência. Veja a seção abaixo.
 - Organização automática dos arquivos em pastas por cliente, ano e mês, com nomes padronizados.
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.
 - **Informações avançadas**: gráfico de pizza e comparativo de regimes adequado ao enquadramento da empresa
@@ -66,6 +67,17 @@ Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1
 - **Categorias** com marca: serviço prestado, serviço tomado, NF-e de venda, de compra, devoluções, outras operações e NF-e sem ciência.
   A seleção vale para cartões, tabela, saldo, gráfico, regimes e planilha. O CFOP decide a categoria; remessas, transferências e
   bonificações ficam em "outras operações" e não somam. O valor é o total da nota (vNF).
+
+## Nota Paulistana (conferência)
+Na janela de busca, o botão **Nota Paulistana (Prefeitura de SP, só conferência)** consulta o web service da própria prefeitura
+(nfews.prefeitura.sp.gov.br), com o mesmo certificado A1. Serve para empresas da capital quando o sistema contábil e a Paulistana divergem.
+- **Fonte separada**: as notas da Paulistana nunca se misturam com as do Ambiente Nacional e começam **desmarcadas** nos totais.
+  Marcar as duas fontes ao mesmo tempo soma ambas.
+- **Prestadas** vêm de ConsultaNFeEmitidas (a Inscrição Municipal é descoberta com ConsultaCNPJ) e **tomadas** de ConsultaNFeRecebidas,
+  página a página (50 notas por página). Notas canceladas ou extraviadas ficam fora dos totais.
+- **Conferência**: se há NFS-e do Ambiente Nacional na mesma busca, os avisos listam os números que aparecem só em uma das fontes
+  (comparação por número, CNPJ da outra parte e valor).
+- Se um lado falha (por exemplo, certificado sem acesso à Paulistana), o erro vira aviso e o resto da busca continua.
 
 ## Planilha Excel
 A planilha é gerada na mesma pasta dos XMLs e contém:

@@ -128,3 +128,43 @@ class SessaoSefazFalsa:
     def post(self, url, data=None, headers=None, timeout=0):
         self.enviados.append((url, data.decode("utf-8"), headers))
         return RespSoap(self.respostas.pop(0) if self.respostas else soap_dist("137", motivo="Nenhum documento localizado"))
+
+
+# ----------------------------------------------------------------------------- Nota Paulistana
+def xml_nfe_sp(im, num, emissao, valor, prestador, tomador, status="N", iss=None, nome_p="PRESTADORA LTDA", nome_t="TOMADORA SA"):
+    iss = valor * 0.05 if iss is None else iss
+    return (f'<NFe xmlns="http://www.prefeitura.sp.gov.br/nfe"><ChaveNFe><InscricaoPrestador>{im}</InscricaoPrestador>'
+            f'<NumeroNFe>{num}</NumeroNFe><CodigoVerificacao>ABCD1234</CodigoVerificacao></ChaveNFe>'
+            f'<DataEmissaoNFe>{emissao}T10:00:00</DataEmissaoNFe><StatusNFe>{status}</StatusNFe>'
+            f'<CPFCNPJPrestador><CNPJ>{prestador}</CNPJ></CPFCNPJPrestador><RazaoSocialPrestador>{nome_p}</RazaoSocialPrestador>'
+            f'<ValorServicos>{valor:.2f}</ValorServicos><ValorDeducoes>0.00</ValorDeducoes><CodigoServico>02496</CodigoServico>'
+            f'<AliquotaServicos>0.05</AliquotaServicos><ValorISS>{iss:.2f}</ValorISS><ISSRetido>false</ISSRetido>'
+            f'<CPFCNPJTomador><CNPJ>{tomador}</CNPJ></CPFCNPJTomador><RazaoSocialTomador>{nome_t}</RazaoSocialTomador>'
+            f'<Discriminacao>Serviços de consultoria</Discriminacao></NFe>')
+
+
+def soap_sp(metodo, notas=(), sucesso=True, erro=None, detalhes=()):
+    """Resposta SOAP 1.1 da Paulistana; o retorno vai escapado dentro de <RetornoXML>."""
+    from xml.sax.saxutils import escape
+    erros = f"<Erro><Codigo>{erro[0]}</Codigo><Descricao>{erro[1]}</Descricao></Erro>" if erro else ""
+    det = "".join(f"<Detalhe><InscricaoMunicipal>{i}</InscricaoMunicipal><EmiteNFe>true</EmiteNFe></Detalhe>" for i in detalhes)
+    raiz = "RetornoConsultaCNPJ" if metodo == "ConsultaCNPJ" else "RetornoConsulta"
+    interno = (f'<{raiz} xmlns="http://www.prefeitura.sp.gov.br/nfe"><Cabecalho Versao="2"><Sucesso>{str(sucesso).lower()}</Sucesso>'
+               f'</Cabecalho>{erros}{det}{"".join(notas)}</{raiz}>')
+    return (f'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><{metodo}Response '
+            f'xmlns="http://www.prefeitura.sp.gov.br/nfe"><RetornoXML>{escape(interno)}</RetornoXML></{metodo}Response></soap:Body></soap:Envelope>')
+
+
+def assinador_falso():
+    import base64 as b64
+    import datetime as d
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import Encoding
+    from cryptography.x509.oid import NameOID
+    chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    nome = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "TESTE")])
+    cert = (x509.CertificateBuilder().subject_name(nome).issuer_name(nome).public_key(chave.public_key())
+            .serial_number(1).not_valid_before(d.datetime(2024, 1, 1)).not_valid_after(d.datetime(2034, 1, 1)).sign(chave, hashes.SHA256()))
+    return {"chave": chave, "certificado_b64": b64.b64encode(cert.public_bytes(Encoding.DER)).decode(), "cert": cert}

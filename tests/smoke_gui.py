@@ -315,6 +315,31 @@ def principal():
         bn.destroy()
         passo("contador de bloqueio e uso do histórico guardado")
 
+        # --- Nota Paulistana: busca separada, fica desmarcada, e a conferência aparece nos avisos
+        from adge_nf import nfe as NFE2
+        from fixtures import assinador_falso, soap_sp, xml_nfe_sp
+        class SessaoSP:
+            def __init__(self, r): self.r, self.enviados = list(r), []
+            def post(self, url, data=None, headers=None, timeout=0):
+                self.enviados.append(url)
+                from fixtures import RespSoap
+                return RespSoap(self.r.pop(0))
+        sp = SessaoSP([soap_sp("ConsultaNFeRecebidas", []), soap_sp("ConsultaCNPJ", detalhes=["999"]),
+                       soap_sp("ConsultaNFeEmitidas", [xml_nfe_sp("999", 77, "2026-08-20", 1234.0, CNPJ, CLI)])])
+        NFE2.carregar_assinador = lambda pfx, senha: assinador_falso()
+        bp = B.DialogoBusca(app, store, dict(emp, tipos={"prestado": True, "tomado": True}), sessao=sessao, sessao_paulistana=sp)
+        bp.v_paul.set(True)
+        bp._escolher_mes(8); bp.ano = 2026; bp._atualizar_meses(); bp._buscar()
+        assert esperar(lambda: bp.resultado is not None, app), f"busca com Paulistana não terminou: {mensagens}"
+        assert len(sp.enviados) == 3
+        assert "paulistana_prestado" in bp.marcas and not bp.sel.ativa("paulistana_prestado")
+        txt = " ".join(bp.resultado["avisos"])
+        assert "Só na Paulistana (1): nº 77" in txt and "Só no Ambiente Nacional" in txt, txt
+        bp.sel.definir("paulistana_prestado", True)
+        bp.update()
+        bp.destroy()
+        passo("Nota Paulistana: busca separada com conferência")
+
         # --- erro do ADN aparece sem travar
         class Ruim:
             def get(self, *a, **k):

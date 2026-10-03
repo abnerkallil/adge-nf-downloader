@@ -51,3 +51,5 @@ Os testes (`tests/test_docs.py`) conferem o formato, os códigos e se existe rel
 | ITEM-31 | Planilha com NF-e e notas sem ciência |
 | ITEM-32 | Regimes com mercadorias e ICMS |
 | ITEM-33 | Operações e créditos por CFOP |
+| ITEM-34 | Nota Fiscal Paulistana (Prefeitura de São Paulo) |
+| ITEM-35 | Conferência entre Ambiente Nacional e Paulistana |

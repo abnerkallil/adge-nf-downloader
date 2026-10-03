@@ -31,6 +31,7 @@ POR_PAGINA = 50
 LIMITE_PAGINAS = 200
 VERSOES = ("2", "1")                    # layout da reforma tributária (2) e o anterior (1), se a prefeitura recusar o primeiro
 ORIGEM = "paulistana"
+ET.register_namespace("", NS)           # os XMLs gravados ficam com xmlns padrão, sem prefixo ns0
 
 # metodo -> (elemento do pedido, elemento do retorno)
 METODOS = {"recebidas": "ConsultaNFeRecebidas", "emitidas": "ConsultaNFeEmitidas", "cnpj": "ConsultaCNPJ"}

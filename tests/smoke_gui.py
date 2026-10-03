@@ -325,7 +325,7 @@ def principal():
                 from fixtures import RespSoap
                 return RespSoap(self.r.pop(0))
         sp = SessaoSP([soap_sp("ConsultaNFeRecebidas", []), soap_sp("ConsultaCNPJ", detalhes=["999"]),
-                       soap_sp("ConsultaNFeEmitidas", [xml_nfe_sp("999", 77, "2026-08-20", 1234.0, CNPJ, CLI)])])
+                       soap_sp("ConsultaNFeEmitidas", [xml_nfe_sp("999", 77, "2026-09-20", 1234.0, CNPJ, CLI)])])
         NFE2.carregar_assinador = lambda pfx, senha: assinador_falso()
         bp = B.DialogoBusca(app, store, dict(emp, tipos={"prestado": True, "tomado": True}), sessao=sessao, sessao_paulistana=sp)
         bp.v_paul.set(True)

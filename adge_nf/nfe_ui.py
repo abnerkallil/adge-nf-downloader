@@ -32,7 +32,8 @@ class DialogoAtivarNFe(Modal):
                   "Antes de ligar, vale saber como isso funciona.").pack(anchor="w", pady=(0, 10))
         _bloco(self, "O que muda", [
             "• Além das NFS-e, o programa passa a consultar as NF-e da empresa no Ambiente Nacional da SEFAZ, com o mesmo certificado A1: "
-            "notas de venda, de compra e devoluções.",
+            "as notas de compra (tomadas) e as devoluções. As NF-e de VENDA que a própria empresa emite não chegam por esse certificado: "
+            "a SEFAZ só as entrega a quem o emitente cita na nota (autXML). Para isso existe a opção Responsável, no menu lateral.",
             "• As NF-e entram no mesmo relatório: totais, saldo, gráfico, planilha e análise de regimes. Você marca o que quer considerar."])
         _bloco(self, "Limites da SEFAZ", [
             "• " + TEXTO_LIMITE,

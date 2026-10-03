@@ -141,7 +141,8 @@ class Armazenamento:
         Reencripta todas as senhas salvas (o app precisa estar aberto/desbloqueado)."""
         if self._fernet is None:
             self.abrir()
-        antigas = [(e, self.decifrar(e.get("senha_cifrada", ""))) for e in self.dados["empresas"]]
+        alvos = list(self.dados["empresas"]) + ([self.dados["responsavel"]] if self.dados.get("responsavel") else [])
+        antigas = [(e, self.decifrar(e.get("senha_cifrada", ""))) for e in alvos]
         if nova_mestra:
             salt = os.urandom(16)
             chave = self._chave_da_mestra(nova_mestra, salt)
@@ -164,7 +165,7 @@ class Armazenamento:
         return next(e for e in self.empresas if e["id"] == id_)
 
     def apagar_tudo(self):
-        """Apaga empresas, preferências e a chave do Cofre do Windows. Não toca nos certificados nem nos XMLs."""
+        """Apaga empresas, o responsável, preferências e a chave do Cofre do Windows. Não toca nos certificados nem nos XMLs."""
         try:
             self._kr().delete_password(SERVICO_COFRE, USUARIO_COFRE)
         except ErroAdge:
@@ -200,6 +201,27 @@ class Armazenamento:
 
     def senha_da_empresa(self, emp: dict) -> str:
         return self.decifrar(emp.get("senha_cifrada", ""))
+
+    # ------------------------------------------------------------------ responsável (v1.7.6)
+    @property
+    def responsavel(self):
+        """Cadastro do responsável (CPF ou CNPJ de quem recebe, por autXML, as notas das empresas) ou None. Fica só neste computador."""
+        return self.dados.get("responsavel") or None
+
+    def salvar_responsavel(self, resp: dict, senha: str = None):
+        """`senha`: None mantém a salva; "" apaga; texto novo cifra (mesma proteção das senhas das empresas)."""
+        if senha is not None:
+            resp["senha_cifrada"] = self.cifrar(senha) if senha else ""
+        self.dados["responsavel"] = resp
+        self.salvar()
+
+    def excluir_responsavel(self):
+        self.dados.pop("responsavel", None)
+        self.salvar()
+
+    def senha_do_responsavel(self, resp: dict = None) -> str:
+        resp = resp or self.responsavel
+        return self.decifrar((resp or {}).get("senha_cifrada", ""))
 
     @property
     def preferencias(self) -> dict:

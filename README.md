@@ -14,12 +14,14 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.
-- **NF-e (modelo 55)**, opcional e desligada por padrão: vendas, compras e devoluções entram no mesmo relatório, com marcas
-  para escolher o que conta nos totais, no gráfico e na análise de regimes. Veja a seção **NF-e** abaixo.
+- **NF-e (modelo 55)**, opcional e desligada por padrão: compras, devoluções e (pelo **Responsável**) vendas entram no mesmo
+  relatório, com marcas para escolher o que conta nos totais, no gráfico e na análise de regimes. Veja a seção **NF-e** abaixo.
 - **Consulta de períodos em lote** (v1.7.5): uma caixa abaixo da lista de meses, desmarcada por padrão, inclui na mesma busca cada
   mês clicado. As fontes são consultadas uma vez só e o resultado mostra cada mês, com o total do lote; gravar salva todos.
 - **RBT12 sugerido** (v1.7.5): em **Informações avançadas**, a receita dos 12 meses anteriores é sugerida a partir das NFS-e
   prestadas já baixadas na consulta, sem consulta extra (não inclui NF-e de mercadorias nem notas fora do Ambiente Nacional).
+- **Responsável** (v1.7.6), primeira opção do menu lateral: cadastra o CPF ou o CNPJ de quem o emitente cita no autXML das notas
+  (por exemplo, o contador) e o certificado A1 dele, para puxar as NF-e de venda. Veja a seção **Responsável** abaixo.
 - **Nota Paulistana** (Prefeitura de São Paulo), busca separada do Ambiente Nacional, só para conferência. Veja a seção abaixo.
 - Organização automática dos arquivos em pastas por cliente, ano e mês, com nomes padronizados.
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.
@@ -60,8 +62,9 @@ modo escuro, a senha mestra, as pastas e as atualizações; em **Sobre**, a apre
 O período é sempre do **primeiro ao último dia do mês** escolhido (28, 29, 30 ou 31).
 
 ## NF-e (modelo 55)
-Na empresa, a opção **NF-e de compra e venda** vem desligada; ao ligar, um aviso explica o que muda. A consulta usa a
-Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1.
+Na empresa, a opção **NF-e (modelo 55)** vem desligada; ao ligar, um aviso explica o que muda. A consulta usa a
+Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1. Ela traz as notas **tomadas** (compras e
+devoluções): a SEFAZ **não** entrega à empresa as NF-e que ela mesma emite (veja **Responsável**).
 - **Consulta por sequência (NSU)**, não por mês. O programa guarda o último NSU e baixa só o novo; depois filtra pelo mês escolhido.
 - **Limite da SEFAZ**: sem nota nova, ela só libera outra consulta depois de cerca de 1 hora. O limite é da SEFAZ, não do programa.
   A tela mostra um contador e, enquanto a SEFAZ está bloqueada, a NF-e fica **desligada e travada** na busca (consultar de novo só
@@ -75,6 +78,22 @@ Distribuição de DF-e do Ambiente Nacional da SEFAZ, com o mesmo certificado A1
 - **Categorias** com marca: serviço prestado, serviço tomado, NF-e de venda, de compra, devoluções, outras operações e NF-e sem ciência.
   A seleção vale para cartões, tabela, saldo, gráfico, regimes e planilha. O CFOP decide a categoria; remessas, transferências e
   bonificações ficam em "outras operações" e não somam. O valor é o total da nota (vNF).
+
+## Responsável (v1.7.6)
+A SEFAZ não entrega a uma empresa as NF-e que ela mesma emite. Elas só chegam a quem o emitente cita na própria nota, no campo
+**autXML** (CPF ou CNPJ, por exemplo o do contador). Por isso existe a primeira opção do menu lateral, **Responsável**:
+- Cadastre o CPF (e-CPF) ou o CNPJ (e-CNPJ) do responsável e o certificado A1 dele. A página explica para que serve, pede três
+  confirmações de ciência (autXML só vale para notas emitidas depois de configurado, autorização do cliente/LGPD, dados só locais)
+  e confere se o certificado é mesmo do documento informado. **Sem necessidade de venda por autXML, não precisa cadastrar.**
+- Tudo fica **só neste computador** (senha cifrada como as das empresas); nada vai a servidor da Adge. Desinstalar o programa não
+  apaga esses dados: use **Remover responsável** ou **Apagar todos os meus dados salvos** antes.
+- Na busca de cada empresa com NF-e ligada, **Certificado da NF-e** permite escolher **Da empresa** (compras, com ciência
+  opcional), **Do responsável** (vendas e notas que o citam) ou **Os dois** (duas consultas à SEFAZ, cada uma com o seu NSU e
+  o seu limite de 1 hora). As notas do responsável chegam de várias empresas juntas; cada busca separa as da empresa consultada.
+- A SEFAZ e a Receita não informam "quais empresas este certificado acessa". A página lista as empresas que **de fato enviaram**
+  NF-e citando o responsável, vistas nas consultas feitas neste computador, e marca quais já estão cadastradas.
+- Limites: é preciso certificado **A1** (A3 não funciona) e o emitente (o sistema de emissão do cliente) precisa incluir o
+  CPF/CNPJ no autXML; sem isso nenhuma nota chega.
 
 ## Nota Paulistana (conferência)
 A chave **Nota Paulistana (Prefeitura de SP, só conferência)** fica no cadastro da empresa (Nova e Editar) e na janela de busca, e consulta o web service da própria prefeitura
@@ -154,7 +173,9 @@ corresponder ao código publicado, a instalação é cancelada. O programa nunca
   cadastrar novamente as senhas dos certificados.
 - Os dados ficam em `%APPDATA%\AdgeGroup\NFDownloader`. O arquivo `.pfx` não é copiado: apenas o caminho é guardado.
 - O programa não envia informações para a Adge nem para terceiros. A única comunicação externa é com o ADN
-  (para buscar as notas) e com a página de Releases do GitHub (para verificar atualizações).
+  (para buscar as notas), com a SEFAZ (se a NF-e estiver ligada), com a Prefeitura de São Paulo (se a Paulistana estiver ligada)
+  e com a página de Releases do GitHub (para verificar atualizações).
+- O cadastro do **Responsável** (documento, nome, caminho do certificado e senha cifrada) segue a mesma regra: só neste computador.
 - Nunca se deve compartilhar o certificado, a senha nem o arquivo `empresas.json`.
 
 ## Desinstalação
@@ -164,6 +185,8 @@ Para removê-los, abrir **Configurações → Apagar todos os meus dados salvos*
 ## Limites desta versão
 - **NFS-e Nacional** (prestado e tomado) e **NF-e modelo 55**. NFC-e e CT-e ficam de fora. A classificação por CFOP, os pesos de crédito e
   as tabelas do Simples (Anexos I e II) são uma orientação: o contador confere.
+- **NF-e de venda** só chega com o **Responsável** e se o emitente incluir o CPF/CNPJ dele no autXML (e só nas notas emitidas depois).
+  Certificado A3 (token/cartão) não funciona: é preciso arquivo A1.
 - Somente **XML**: o PDF/DANFSe exige captcha no portal e não há API oficial sem ele.
 - O período usa a data de processamento da nota no ADN. O valor somado é o **valor do serviço (vServ)**,
   antes de retenções e deduções.

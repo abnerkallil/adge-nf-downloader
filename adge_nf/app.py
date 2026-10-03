@@ -21,7 +21,7 @@ from .ui import P, Botao, Cartao, Chip, Interruptor, Rolavel, F, px, rotulo
 
 formatar_cnpj = ui.formatar_cnpj
 ACOES = {"ambos": "Calcular + baixar", "calcular": "Só calcular", "baixar": "Só baixar"}
-PAGINAS = (("empresas", "Empresas"), ("historico", "Histórico"), ("config", "Configurações"), ("sobre", "Sobre"))
+PAGINAS = (("responsavel", "Responsável"), ("empresas", "Empresas"), ("historico", "Histórico"), ("config", "Configurações"), ("sobre", "Sobre"))
 
 
 def quando_humano(iso: str, agora: dt.datetime = None) -> str:
@@ -129,6 +129,7 @@ class App(tk.Tk):
         self.conteudo = tk.Frame(self.direita, bg=P.fundo)
         self.conteudo.pack(fill="both", expand=True)
         self.paginas = {}
+        self._pagina_responsavel()
         self._pagina_empresas()
         self._pagina_historico()
         self._pagina_config()
@@ -163,7 +164,9 @@ class App(tk.Tk):
         for chave, f in self.paginas.items():
             f.pack_forget()
         self.paginas[nome].pack(fill="both", expand=True)
-        if nome == "empresas":
+        if nome == "responsavel":
+            self.paginas["responsavel"].atualizar()
+        elif nome == "empresas":
             self._atualizar_lista(self.selecionada_id)
         elif nome == "historico":
             self._atualizar_historico()
@@ -175,6 +178,12 @@ class App(tk.Tk):
         if acao:
             acao(cab).pack(side="right", anchor="n")
         return cab
+
+    # ------------------------------------------------------------------ página Responsável (v1.7.6)
+    def _pagina_responsavel(self):
+        from .responsavel import PaginaResponsavel
+        self.paginas["responsavel"] = PaginaResponsavel(self.conteudo, self, self.store, base_historico=getattr(self, "base_historico_resp", None),
+                                                        sessao_nfe=getattr(self, "sessao_nfe_resp", None))
 
     # ------------------------------------------------------------------ página Empresas
     def _pagina_empresas(self):
@@ -500,7 +509,7 @@ class App(tk.Tk):
         n = len(self.store.empresas)
         if not ui.perguntar(
                 self, "Apagar todos os dados salvos?",
-                f"Isso apaga PARA SEMPRE, só neste computador: as {n} empresa(s) salva(s), as senhas dos certificados, "
+                f"Isso apaga PARA SEMPRE, só neste computador: as {n} empresa(s) salva(s), o responsável cadastrado (se houver), as senhas dos certificados, "
                 "a chave de proteção no Cofre do Windows e as preferências do app.\n\n"
                 "Os certificados (.pfx) e os XMLs já baixados NÃO são apagados.", sim="Continuar", nao="Cancelar", perigo=True):
             return
@@ -554,7 +563,8 @@ class App(tk.Tk):
         self.b_apresentacao.pack(side="left")
         rotulo(aba, "Como funciona", 12, "bold", "verde_escuro").pack(anchor="w", pady=(0, 4))
         rotulo(aba, "O programa roda só neste computador: não há servidor nem conta. O certificado A1 é usado apenas para conversar com "
-                    "o ADN oficial da NFS-e Nacional (adn.nfse.gov.br). Nunca compartilhe o arquivo do certificado nem a senha.",
+                    "o ADN oficial da NFS-e Nacional (adn.nfse.gov.br) e, se você ligar a NF-e, com a SEFAZ. Nunca compartilhe o arquivo do "
+                    "certificado nem a senha.",
                10, cor="suave", largura=px(680)).pack(anchor="w")
 
     # ------------------------------------------------------------------ validade dos certificados (em segundo plano, 1x por dia)

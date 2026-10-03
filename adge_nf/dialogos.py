@@ -124,7 +124,7 @@ class DialogoEmpresa(Modal):
         rotulo(d, "O que baixar", 11, "bold", "verde_escuro").pack(anchor="w", pady=(0, 6))
         Interruptor(d, "Serviço prestado (NFS-e emitidas)", self.v_prest).pack(anchor="w", pady=3)
         Interruptor(d, "Serviço tomado (NFS-e recebidas)", self.v_tom).pack(anchor="w", pady=3)
-        Interruptor(d, "NF-e de compra e venda (modelo 55)", self.v_nfe, self._ligar_nfe).pack(anchor="w", pady=3)
+        Interruptor(d, "NF-e (modelo 55): compras e devoluções", self.v_nfe, self._ligar_nfe).pack(anchor="w", pady=3)
         Interruptor(d, "Registrar a Ciência da Operação automaticamente", self.v_ciencia, self._ligar_ciencia, tam=9).pack(
             anchor="w", pady=(0, 3), padx=(px(26), 0))
         Interruptor(d, "Nota Paulistana (Prefeitura de SP, só conferência)", self.v_paul).pack(anchor="w", pady=3)

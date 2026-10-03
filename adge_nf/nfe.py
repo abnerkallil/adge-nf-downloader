@@ -2,8 +2,9 @@
 
 Como funciona (resumo):
 - A consulta é por NSU (número sequencial), não por mês: o programa guarda o último NSU de cada empresa e baixa só o que é novo.
-- Notas emitidas pela empresa e notas tomadas já manifestadas chegam com o XML completo (procNFe). Notas tomadas sem
-  manifestação chegam só como resumo (resNFe: chave, emitente, valor, tipo).
+- Notas tomadas já manifestadas chegam com o XML completo (procNFe); sem manifestação chegam só como resumo (resNFe: chave,
+  emitente, valor, tipo). A SEFAZ NÃO entrega à empresa as NF-e que ela mesma emite: essas só chegam a quem o emitente citou
+  na própria nota (campo autXML), por exemplo o CPF/CNPJ do contador, consultando com o certificado dessa pessoa (v1.7.6).
 - A SEFAZ limita as consultas: sem documento novo, só libera outra consulta depois de cerca de 1 hora (cStat 137/656).
   O limite é da própria SEFAZ, não do programa.
 - A Ciência da Operação (evento 210210) é opcional e fica desligada por padrão: registra, em nome da empresa, que ela tomou
@@ -211,7 +212,8 @@ def montar_plano_nfe(docs: list, cnpj: str, ano: int, mes: int, limite_nome: int
             continue
         cat = classificar_nfe(d, cnpj)
         if cat is None:
-            terceiros += 1
+            if x.get("fonte") != "responsavel":       # o responsável recebe notas de várias empresas: as de outras são esperadas
+                terceiros += 1
             continue
         r = conta(cat)
         if chave in canceladas or d.get("situacao_prot") in ("101", "151", "135"):
@@ -230,8 +232,10 @@ def montar_plano_nfe(docs: list, cnpj: str, ano: int, mes: int, limite_nome: int
         dia = data_da_nfe(d)
         if dia is None or not (ini <= dia <= fim):
             continue
+        if x.get("fonte") == "responsavel":
+            continue                                  # resumo recebido pelo responsável: não se sabe se é compra desta empresa
         if d["emitente_doc"] == cnpj:
-            continue                                  # notas da própria empresa vêm completas; resumo aqui não é nota tomada
+            continue                                  # resumo de nota emitida pela própria empresa: não é nota tomada (a empresa não recebe as notas que emite)
         r = conta("nfe_resumo")
         if chave in canceladas or d.get("situacao") == "3":
             r["canceladas"] += 1
@@ -289,11 +293,14 @@ def _envelope(corpo: str) -> str:
 
 
 def xml_distribuicao(cnpj: str, ultimo_nsu: int = 0, chave: str = "", ambiente: str = "1") -> str:
+    """`cnpj` aceita também um CPF (11 dígitos): quem consulta pelo certificado de uma pessoa (o responsável) usa a tag <CPF>."""
+    doc = re.sub(r"\D", "", cnpj)
+    tag = "CPF" if len(doc) == 11 else "CNPJ"
     if chave:
         escolha = f"<consChNFe><chNFe>{escape(chave)}</chNFe></consChNFe>"
     else:
         escolha = f"<distNSU><ultNSU>{int(ultimo_nsu):015d}</ultNSU></distNSU>"
-    return (f'<distDFeInt xmlns="{NS_NFE}" versao="1.01"><tpAmb>{ambiente}</tpAmb><CNPJ>{cnpj}</CNPJ>{escolha}</distDFeInt>')
+    return (f'<distDFeInt xmlns="{NS_NFE}" versao="1.01"><tpAmb>{ambiente}</tpAmb><{tag}>{doc}</{tag}>{escolha}</distDFeInt>')
 
 
 def _soap_dist(interno: str) -> str:

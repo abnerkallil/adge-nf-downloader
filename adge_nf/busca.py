@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
 
-from . import NOME_APP, core, nfe, paulistana, totais
+from . import NOME_APP, core, nfe, nfe_resp, paulistana, totais
 from . import ui
 from .core import Cancelado, ErroAdge
 from .nfe_cache import HistoricoNFe, formatar_espera
@@ -53,11 +53,13 @@ class DialogoBusca(Modal):
                ("parte", "Cliente / Fornecedor", 312, "w"), ("valor", "Valor", 120, "e"))
 
     def __init__(self, pai, store: Armazenamento, emp: dict, sessao=None, periodo=None, auto=False, sessao_nfe=None,
-                 base_historico=None, sessao_paulistana=None, da_pasta=None):
+                 base_historico=None, sessao_paulistana=None, da_pasta=None, sessao_nfe_resp=None):
         super().__init__(pai, f"Buscar notas — {emp['nome']}", margem=22)
         self.store, self.emp, self.sessao_teste = store, dict(emp), sessao
         self.sessao_nfe_teste, self.base_historico, self.hist = sessao_nfe, base_historico, None
         self.sessao_paulistana_teste = sessao_paulistana
+        self.sessao_nfe_resp_teste, self.hist_resp = sessao_nfe_resp, None     # NF-e pelo certificado do responsável (v1.7.6)
+        self.v_cert_nfe = tk.StringVar(value=self._cert_nfe_inicial())
         self.sel = totais.Selecao()
         self.sel.ao_mudar(self._mudou_selecao)
         self.fila: "queue.Queue" = queue.Queue()
@@ -153,6 +155,16 @@ class DialogoBusca(Modal):
         self.sw_nfe = Interruptor(tipos2, "NF-e (modelo 55)", self.v_nfe, desabilitado=not self.emp.get("nfe"))
         self.sw_nfe.pack(side="left", padx=(0, 14))
         Interruptor(tipos2, "Nota Paulistana (Prefeitura de SP, só conferência)", self.v_paul).pack(side="left")
+        self.f_cert_nfe = tk.Frame(dir_, bg=P.superficie)
+        if self.store.responsavel and self.emp.get("nfe"):
+            self.f_cert_nfe.pack(anchor="w", pady=(8, 0))
+            rotulo(self.f_cert_nfe, "Certificado da NF-e", 9, "bold", "suave").pack(anchor="w")
+            self.seg_cert = Segmentado(self.f_cert_nfe, [("empresa", "Da empresa"), ("responsavel", "Do responsável"), ("ambos", "Os dois")],
+                                       self.v_cert_nfe, self._mudou_cert_nfe, tam=9, pady=4)
+            self.seg_cert.pack(anchor="w", pady=(3, 0))
+            self.l_cert_dica = rotulo(self.f_cert_nfe, "", 9, cor="suave", largura=px(400))
+            self.l_cert_dica.pack(anchor="w", pady=(3, 0))
+            self._mudou_cert_nfe()
         rotulo(dir_, "O que fazer", 11, "bold", "verde_escuro").pack(anchor="w", pady=(12, 4))
         self.seg_acao = Segmentado(dir_, [("ambos", "Total e XMLs"), ("calcular", "Só o total"), ("baixar", "Só os XMLs")], self.v_acao)
         self.seg_acao.pack(anchor="w")
@@ -327,26 +339,73 @@ class DialogoBusca(Modal):
             self.hist.estado = self.hist._ler()
         return self.hist
 
+    # ------------------------------------------------------------------ NF-e: de qual certificado (empresa, responsável ou os dois)
+    def _cert_nfe_inicial(self) -> str:
+        if not self.store.responsavel:
+            return "empresa"
+        v = self.store.preferencias.get("cert_nfe", {}).get(self.emp["id"], "empresa")
+        return v if v in ("empresa", "responsavel", "ambos") else "empresa"
+
+    def _mudou_cert_nfe(self):
+        nome = (self.store.responsavel or {}).get("nome") or "o responsável"
+        self.l_cert_dica.config(text={
+            "empresa": "Compras e notas tomadas pela empresa (com a ciência da operação, se estiver ligada).",
+            "responsavel": f"NF-e de venda e notas que citam {nome} no autXML, consultadas com o certificado do responsável.",
+            "ambos": "Compras pela empresa e vendas pelo responsável, no mesmo relatório (duas consultas à SEFAZ, cada uma com o seu limite)."}
+            [self.v_cert_nfe.get()])
+        self._nfe_travada = None            # refaz o contador e o interruptor da NF-e com a(s) fonte(s) escolhida(s)
+
+    def _fontes_nfe(self) -> list:
+        if not self.emp.get("nfe"):
+            return []
+        esc = self.v_cert_nfe.get() if self.store.responsavel else "empresa"
+        return {"empresa": ["empresa"], "responsavel": ["responsavel"], "ambos": ["empresa", "responsavel"]}.get(esc, ["empresa"])
+
+    def _historico_resp(self) -> HistoricoNFe:
+        """Controle de NSU e bloqueio do responsável (a SEFAZ conta as consultas por quem consulta, não por empresa)."""
+        if self.hist_resp is None:
+            self.hist_resp = HistoricoNFe(nfe_resp.emp_do_responsavel(self.store.responsavel), base=self.base_historico)
+        else:
+            self.hist_resp.estado = self.hist_resp._ler()
+        return self.hist_resp
+
+    def _hist_da_fonte(self, fonte: str) -> HistoricoNFe:
+        return self._historico() if fonte == "empresa" else self._historico_resp()
+
     def _tic_nfe(self):
         """A cada segundo: mostra o contador da SEFAZ e trava/destrava o interruptor da NF-e. Com a SEFAZ bloqueada a NF-e fica
         desligada e sem opção de religar (consultar de novo só reinicia a espera de 1 hora); quando o prazo acaba ela volta sozinha."""
         if not self.winfo_exists():
             return
         if self.emp.get("nfe") and not self.da_pasta:
-            h = self._historico()
-            travada = h.bloqueio_restante() is not None
+            fontes = self._fontes_nfe()
+            hs = {f: self._hist_da_fonte(f) for f in fontes}
+            travada = all(h.bloqueio_restante() is not None for h in hs.values())
             if travada != self._nfe_travada:
                 self._nfe_travada = travada
                 self.sw_nfe.desabilitar(travada)
                 self.v_nfe.set(not travada)
             ciencia = "ciência automática" if self.emp.get("nfe_ciencia") else "sem ciência"
-            if not travada:
-                self.l_nfe_timer.config(text=f"NF-e: consulta liberada na SEFAZ ({ciencia}).", fg=ui._cor("verde_escuro"))
+            if fontes == ["empresa"]:
+                h = hs["empresa"]
+                if not travada:
+                    self.l_nfe_timer.config(text=f"NF-e: consulta liberada na SEFAZ ({ciencia}).", fg=ui._cor("verde_escuro"))
+                else:
+                    self.l_nfe_timer.config(
+                        text=f"NF-e desligada: a SEFAZ libera outra consulta em {formatar_espera(h.bloqueio_restante() or dt.timedelta(0))} "
+                             f"(às {h.liberado_as():%H:%M}). Volta sozinha. Limite da SEFAZ, não da Adge.",
+                        fg=ui._cor("aviso_texto"))
             else:
-                self.l_nfe_timer.config(
-                    text=f"NF-e desligada: a SEFAZ libera outra consulta em {formatar_espera(h.bloqueio_restante() or dt.timedelta(0))} "
-                         f"(às {h.liberado_as():%H:%M}). Volta sozinha. Limite da SEFAZ, não da Adge.",
-                    fg=ui._cor("aviso_texto"))
+                partes = []
+                for f, h in hs.items():
+                    nome = "empresa" if f == "empresa" else "responsável"
+                    resto = h.bloqueio_restante()
+                    partes.append(f"{nome}: liberada" if resto is None else f"{nome}: espera de {formatar_espera(resto)} (às {h.liberado_as():%H:%M})")
+                if travada:
+                    texto = "NF-e desligada: " + "; ".join(partes) + ". Volta sozinha. Limite da SEFAZ, não da Adge."
+                else:
+                    texto = "NF-e: " + "; ".join(partes) + ("; a que está em espera fica de fora desta busca." if any("espera" in p for p in partes) else ".")
+                self.l_nfe_timer.config(text=texto, fg=ui._cor("aviso_texto" if travada or "espera" in texto else "verde_escuro"))
         self.after(1000, self._tic_nfe)
 
     # ------------------------------------------------------------------ busca
@@ -360,7 +419,12 @@ class DialogoBusca(Modal):
         if self.trabalhando:
             return
         emp = self._emp_da_busca()
-        usar_nfe = bool(emp.get("nfe") and self.v_nfe.get() and not self._historico().bloqueado())
+        escolhidas = self._fontes_nfe() if self.v_nfe.get() else []
+        fontes_nfe = [f for f in escolhidas if not self._hist_da_fonte(f).bloqueado()]    # a fonte em espera fica de fora
+        puladas = [f for f in escolhidas if f not in fontes_nfe]
+        usar_nfe = bool(fontes_nfe)
+        if emp.get("nfe"):
+            self._historico()               # o controle da empresa existe mesmo quando só o responsável é consultado
         usar_paul = bool(self.v_paul.get())
         if not (emp["tipos"]["prestado"] or emp["tipos"]["tomado"] or usar_nfe or usar_paul):
             ui.avisar(self, "Marque pelo menos um tipo de nota", "Escolha serviço prestado, serviço tomado, NF-e, Nota Paulistana ou mais de um.")
@@ -375,6 +439,25 @@ class DialogoBusca(Modal):
                                    validar=lambda t: None if t else "Digite a senha.")
             if not senha:
                 return
+        senha_resp = ""
+        if "responsavel" in fontes_nfe:
+            resp = self.store.responsavel
+            try:
+                senha_resp = self.store.senha_do_responsavel(resp)
+            except ErroAdge as e:
+                ui.avisar(self, "Não consegui usar a senha salva do responsável", str(e))
+            if not senha_resp:
+                senha_resp = ui.pedir_texto(self, "Senha do certificado do responsável",
+                                            f"Digite a senha do certificado de {resp.get('nome') or 'responsável'}:", oculto=True,
+                                            validar=lambda t: None if t else "Digite a senha.")
+                if not senha_resp:
+                    return
+        if self.store.responsavel and self.emp.get("nfe"):         # lembra a escolha do certificado para a próxima busca desta empresa
+            self.store.preferencias.setdefault("cert_nfe", {})[self.emp["id"]] = self.v_cert_nfe.get()
+            try:
+                self.store.salvar()
+            except OSError:
+                pass
         self.f_res.pack_forget()
         self.f_botoes.pack_forget()
         self.l_destino.pack_forget()
@@ -396,7 +479,7 @@ class DialogoBusca(Modal):
                                              cancelar=lambda: self.cancelar_flag, sessao=self.sessao_teste)
                 else:
                     docs, cnpj = [], re.sub(r"\D", "", emp["cnpj"])
-                ctx = self._trabalho_nfe(emp, senha, cnpj, ano, mes, periodos) if usar_nfe else None
+                ctx = (self._trabalho_nfe(emp, senha, cnpj, ano, mes, periodos, fontes_nfe, senha_resp, puladas) if usar_nfe else None)
                 if usar_paul:
                     self._trabalho_paulistana(emp, senha, cnpj, ano, mes, periodos)
                 if len(periodos) > 1:     # as fontes já foram consultadas uma vez só; aqui só se separa cada mês
@@ -432,33 +515,71 @@ class DialogoBusca(Modal):
         except ImportError as e:
             self.docs_paul, self.msgs_paul = [], [f"Nota Paulistana: instalação incompleta (falta um componente): {e}"]
 
-    def _trabalho_nfe(self, emp, senha, cnpj, ano, mes, periodos=None) -> dict:
+    def _trabalho_nfe(self, emp, senha, cnpj, ano, mes, periodos=None, fontes=("empresa",), senha_resp="", puladas=()) -> dict:
         """Parte da NF-e da busca (roda fora da tela). Erros da SEFAZ não derrubam as NFS-e: viram avisos.
-        O bloqueio da SEFAZ é gravado na hora; o NSU e os XMLs ficam na memória (`pend_docs`) até a pessoa salvar as notas."""
+        O bloqueio da SEFAZ é gravado na hora; o NSU e os XMLs ficam na memória (`pend_docs`) até a pessoa salvar as notas.
+        `fontes`: 'empresa' (certificado da empresa: compras, com ciência opcional) e/ou 'responsavel' (certificado do responsável:
+        NF-e de venda e notas que o citam no autXML). Cada fonte tem o seu NSU e o seu limite de consultas na SEFAZ."""
         h = self.hist
-        ctx = {"msgs": [], "novos": 0, "ciencia": 0, "consultou": False, "pend_docs": [], "confirmado": False,
-               "ult_nsu": h.estado["ult_nsu"], "max_nsu": h.estado["max_nsu"]}
+        ctx = {"msgs": [], "novos": 0, "ciencia": 0, "consultou": False, "pend_docs": [], "confirmado": "empresa" not in fontes,
+               "ult_nsu": h.estado["ult_nsu"], "max_nsu": h.estado["max_nsu"], "resp": None}
         log = lambda m: self.fila.put(("log", m))   # noqa: E731
         cancelar = lambda: self.cancelar_flag       # noqa: E731
-        try:
-            sessao = self.sessao_nfe_teste or nfe.sessao_nfe(emp["pfx"], senha)
-            log("Consultando as NF-e na SEFAZ...")
-            r = nfe.consultar_distribuicao(sessao, cnpj, h.estado["ult_nsu"], log=log, cancelar=cancelar)
-            h.registrar_bloqueio(r["max_nsu"], r["bloqueado_ate"], (ano, mes))
-            ctx.update(consultou=True, ult_nsu=r["ult_nsu"], max_nsu=r["max_nsu"], novos=len(r["docs"]), pend_docs=list(r["docs"]))
-            if r["situacao"] == "bloqueado":
-                ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
-                                   + (f": {r['mensagem']}" if r.get("mensagem") else "") + ").")
-            if emp.get("nfe_ciencia"):
-                self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar, periodos)
-        except Cancelado:
-            raise
-        except ErroAdge as e:
-            ctx["msgs"].append(f"NF-e não consultada: {e}")
-        ctx["docs"] = self._juntar_docs(h.carregar_docs(), ctx["pend_docs"])
+        for f in puladas:
+            ctx["msgs"].append(f"NF-e pelo certificado {'da empresa' if f == 'empresa' else 'do responsável'}: a SEFAZ ainda está em espera "
+                               "(limite dela), então essa fonte ficou de fora desta busca.")
+        docs_empresa = []
+        if "empresa" in fontes:
+            try:
+                sessao = self.sessao_nfe_teste or nfe.sessao_nfe(emp["pfx"], senha)
+                log("Consultando as NF-e na SEFAZ...")
+                r = nfe.consultar_distribuicao(sessao, cnpj, h.estado["ult_nsu"], log=log, cancelar=cancelar)
+                h.registrar_bloqueio(r["max_nsu"], r["bloqueado_ate"], (ano, mes))
+                ctx.update(consultou=True, ult_nsu=r["ult_nsu"], max_nsu=r["max_nsu"], novos=len(r["docs"]), pend_docs=list(r["docs"]))
+                if r["situacao"] == "bloqueado":
+                    ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e por excesso de consultas (limite dela, não do sistema; cStat 656"
+                                       + (f": {r['mensagem']}" if r.get("mensagem") else "") + ").")
+                if emp.get("nfe_ciencia"):
+                    self._ciencia(sessao, emp, senha, cnpj, ano, mes, ctx, log, cancelar, periodos)
+            except Cancelado:
+                raise
+            except ErroAdge as e:
+                ctx["msgs"].append(f"NF-e não consultada: {e}")
+            docs_empresa = self._juntar_docs(h.carregar_docs(), ctx["pend_docs"])
+        docs_resp = []
+        if "responsavel" in fontes:
+            docs_resp = self._trabalho_nfe_resp(ctx, ano, mes, senha_resp, log, cancelar)
+        ctx["docs"] = docs_empresa + docs_resp
         if not ctx["docs"] and not ctx["msgs"]:
             ctx["msgs"].append("Nenhuma NF-e encontrada para esta empresa.")
         return ctx
+
+    def _trabalho_nfe_resp(self, ctx, ano, mes, senha_resp, log, cancelar) -> list:
+        """Consulta a SEFAZ com o certificado do responsável (CPF ou CNPJ). Devolve os documentos dele (cache + novos), marcados como
+        `fonte: responsavel`: as notas de várias empresas chegam juntas e cada busca só separa as da empresa consultada."""
+        resp = self.store.responsavel
+        hr = self._historico_resp()
+        sub = {"consultou": False, "pend_docs": [], "confirmado": False, "ult_nsu": hr.estado["ult_nsu"], "max_nsu": hr.estado["max_nsu"],
+               "novos": 0}
+        ctx["resp"] = sub
+        try:
+            sessao = self.sessao_nfe_resp_teste or nfe.sessao_nfe(resp["pfx"], senha_resp)
+            log("Consultando as NF-e pelo certificado do responsável...")
+            r = nfe.consultar_distribuicao(sessao, resp["documento"], hr.estado["ult_nsu"], log=log, cancelar=cancelar)
+            hr.registrar_bloqueio(r["max_nsu"], r["bloqueado_ate"], (ano, mes))
+            sub.update(consultou=True, ult_nsu=r["ult_nsu"], max_nsu=r["max_nsu"], novos=len(r["docs"]), pend_docs=list(r["docs"]))
+            ctx["novos"] += len(r["docs"])
+            if r["situacao"] == "bloqueado":
+                ctx["msgs"].append("A SEFAZ recusou a consulta de NF-e do responsável por excesso de consultas (limite dela, não do sistema; "
+                                   "cStat 656" + (f": {r['mensagem']}" if r.get("mensagem") else "") + ").")
+        except Cancelado:
+            raise
+        except ErroAdge as e:
+            ctx["msgs"].append(f"NF-e pelo responsável não consultada: {e}")
+        docs = self._juntar_docs(hr.carregar_docs(), sub["pend_docs"])
+        for d in docs:
+            d["fonte"] = "responsavel"
+        return docs
 
     @staticmethod
     def _juntar_docs(guardados: list, novos: list) -> list:
@@ -1012,6 +1133,24 @@ class DialogoBusca(Modal):
             except OSError as e:
                 ui.avisar(self, "Não consegui guardar o controle da NF-e", f"{e}\n\nAs notas foram salvas na pasta, mas a próxima consulta "
                                                                               "de NF-e vai repetir as mesmas notas.")
+        sub = ctx.get("resp") if ctx else None
+        if sub and sub.get("consultou") and not sub.get("confirmado") and self.hist_resp is not None:
+            try:
+                self.hist_resp.confirmar(sub["pend_docs"], sub["ult_nsu"], sub["max_nsu"])
+                sub["confirmado"] = True
+            except OSError as e:
+                ui.avisar(self, "Não consegui guardar o controle da NF-e do responsável",
+                          f"{e}\n\nAs notas foram salvas na pasta, mas a próxima consulta pelo responsável vai repetir as mesmas notas.")
+
+    def _fontes_pendentes(self, ctx) -> list:
+        """Históricos de NF-e (empresa e/ou responsável) consultados nesta busca cujo NSU ainda não foi confirmado (nada salvo)."""
+        saida = []
+        if ctx and ctx.get("consultou") and not ctx.get("confirmado") and self.hist is not None:
+            saida.append(self.hist)
+        sub = ctx.get("resp") if ctx else None
+        if sub and sub.get("consultou") and not sub.get("confirmado") and self.hist_resp is not None:
+            saida.append(self.hist_resp)
+        return saida
 
     @staticmethod
     def _formatar_saldo(v: float) -> str:
@@ -1075,9 +1214,9 @@ class DialogoBusca(Modal):
         elif self._tem_nao_salvo():
             texto = ("Você ainda não salvou as notas desta consulta em nenhuma pasta.\n\n"
                      "Se sair agora, esta consulta não entra no histórico e, para ver estas notas de novo, o sistema terá de consultar tudo outra vez.")
-            ctx = self.resultado.get("nfe")
-            if ctx and ctx.get("consultou") and not ctx.get("confirmado") and self.hist is not None and self.hist.bloqueado():
-                texto += (f"\n\nAtenção: a SEFAZ já bloqueou novas consultas de NF-e (libera às {self.hist.liberado_as():%H:%M}). "
+            bloqueados = [h for h in self._fontes_pendentes(self.resultado.get("nfe")) if h.bloqueado()]
+            if bloqueados:
+                texto += (f"\n\nAtenção: a SEFAZ já bloqueou novas consultas de NF-e (libera às {max(h.liberado_as() for h in bloqueados):%H:%M}). "
                           "Sem salvar, as NF-e desta consulta só voltam depois disso.")
             escolha = ui.escolher(self, "As notas não foram salvas", texto,
                                   [("Voltar", "voltar", "secundario"), ("Sair sem salvar", "sair", "secundario"),

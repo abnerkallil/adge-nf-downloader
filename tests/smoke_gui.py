@@ -613,14 +613,89 @@ def principal():
         assert esperar(lambda: ui.P.nome == "claro" and app.pagina == "config", app)
         passo("modo escuro liga, desliga e guarda a preferência")
 
+        # --- Responsável (v1.7.6): menu, ciência, certificado e-CPF, senha cifrada, lista de empresas e busca pelo certificado dele
+        from adge_nf import nfe_cache as NC, nfe_resp as NR
+        from fixtures import SessaoSefazFalsa as SSF, soap_dist as SD, xml_nfe as XN
+        import datetime as _dt
+        assert A.PAGINAS[0] == ("responsavel", "Responsável") and "responsavel" in app.nav and "responsavel" in app.paginas
+        hist_resp = t / "hist_resp"
+        app.base_historico_resp = str(hist_resp)
+        orig_ler = core.ler_certificado
+        core.ler_certificado = lambda *_: {"cnpj": "", "cpf": "52998224725", "documento": "52998224725", "tipo": "cpf",
+                                           "nome": "CONTADOR TESTE", "valido_ate": _dt.date(2099, 1, 1)}
+        esperar(lambda: False, app, 0.4)                    # a troca de tema do passo anterior remonta as páginas 50 ms depois
+        app._ir("responsavel"); app.update()
+        pr = app.paginas["responsavel"]
+        assert store.responsavel is None and pr.b_salvar._estado == "disabled"        # sem as confirmações de ciência não salva
+        pfx2 = t / "resp.pfx"
+        pfx2.write_bytes(b"x")
+        pr.v_tipo.set("cpf"); pr.v_doc.set("529.982.247-25"); pr.v_nome.set("CONTADOR TESTE"); pr.v_pfx.set(str(pfx2)); pr.v_senha.set("segredo2")
+        pr._salvar()
+        assert store.responsavel is None and "confirmações" in pr.l_erro.cget("text"), pr.l_erro.cget("text")
+        for v in pr.v_ciente:
+            v.set(True)
+        pr._atualizar_salvar(); assert pr.b_salvar._estado == "normal"
+        pr.v_doc.set("529.982.247-24")
+        pr._salvar()
+        assert store.responsavel is None and "válido" in pr.l_erro.cget("text"), pr.l_erro.cget("text")   # CPF com dígito errado
+        pr.v_doc.set("529.982.247-25")
+        pr._salvar()
+        r = store.responsavel
+        assert r and r["documento"] == "52998224725" and r["tipo"] == "cpf" and r["cert_validade"] == "2099-01-01" and r["ciente_em"], r
+        assert store.senha_do_responsavel() == "segredo2" and "segredo2" not in (t / "dados" / "empresas.json").read_text(encoding="utf-8")
+        passo("Responsável: exige ciência e CPF válido, confere o certificado e salva a senha cifrada")
+
+        # empresas que enviaram notas: vazio no começo; a consulta pelo certificado dele (tag <CPF>) traz a venda da empresa
+        sefaz_r = SSF([SD("138", [(7, "procNFe_v4.00.xsd", XN(CNPJ, "44444444000144", [("5102", 4000.0)], num=9, emit_nome="EMPRESA TESTE"))],
+                          ult=7, maxi=7)])
+        app.sessao_nfe_resp = sefaz_r
+        pr._atualizar_lista_sefaz()
+        assert esperar(lambda: not pr.trabalhando, app), mensagens[-3:]
+        assert "<CPF>52998224725</CPF>" in sefaz_r.enviados[0][1]
+        def textos(w):
+            saida = []
+            try:
+                saida.append(str(w.cget("text")))
+            except Exception:
+                pass
+            for f in w.winfo_children():
+                saida += textos(f)
+            return saida
+        assert any("11.222.333/0001-81" in x and "1 nota(s)" in x for x in textos(pr)), [x for x in textos(pr) if "nota" in x][:5]
+        passo("Responsável: lista as empresas que enviaram NF-e e marca a consulta pelo CPF")
+
+        # busca da empresa: escolher o certificado do responsável e ver a venda (nfe_saida) vinda dele
+        hr = NC.HistoricoNFe(NR.emp_do_responsavel(store.responsavel), base=str(hist_resp))
+        hr.estado["bloqueio_ate"] = "2000-01-01T00:00:00"; hr.salvar_estado()
+        emp_r = dict(store.empresas[0], nfe=True, tipos={"prestado": False, "tomado": False})
+        rr = SSF([])
+        br = B.DialogoBusca(app, store, emp_r, sessao=SessaoFalsa([]), sessao_nfe=SSF([]), sessao_nfe_resp=rr, base_historico=str(hist_resp))
+        br.update()
+        assert hasattr(br, "seg_cert") and br.v_cert_nfe.get() == "empresa"
+        br.v_cert_nfe.set("responsavel"); br._mudou_cert_nfe()
+        br.ano = 2026; br._escolher_mes(8); br._atualizar_meses()
+        br._buscar()
+        assert esperar(lambda: br.resultado is not None, app), f"busca pelo responsável não terminou: {mensagens[-3:]}"
+        assert abs(br.resultado["resumo"]["nfe_saida"]["valor"] - 4000.0) < 0.001, br.resultado["resumo"]
+        assert "<CPF>52998224725</CPF>" in rr.enviados[0][1]
+        assert store.preferencias["cert_nfe"][emp_r["id"]] == "responsavel"          # lembra a escolha desta empresa
+        br.destroy()
+        sem_resp = B.DialogoBusca(app, store, dict(store.empresas[0], nfe=True), sessao=SessaoFalsa([]), base_historico=str(hist_resp))
+        assert sem_resp.v_cert_nfe.get() == "responsavel"                             # volta com a escolha da última vez
+        sem_resp.destroy()
+        passo("busca: certificado do responsável traz a NF-e de venda da empresa e a escolha fica lembrada")
+        core.ler_certificado = orig_ler
+
         # --- configurações
         store.trocar_modo("mestra123")
+        assert store.senha_do_responsavel() == "segredo2"                             # a senha do responsável também é recifrada
         app._atualizar_seguranca()
         assert "senha mestra" in app.l_seg.cget("text").lower()
         passo("configurações")
         # a aba de configurações tem rolagem e botão de apagar dados
         assert any(isinstance(w, ui.Rolavel) for w in app.paginas["config"].winfo_children())
         app._apagar_dados()
+        assert store.responsavel is None
         assert store.empresas == [] and not (t / "dados" / "empresas.json").exists()
         passo("apagar todos os dados")  # o app fecha sozinho depois de apagar
 

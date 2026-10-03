@@ -275,7 +275,7 @@ def sessao_com_certificado(pfx: str, senha: str):
 
 
 def ler_certificado(pfx: str, senha: str) -> dict:
-    """Abre o .pfx/.p12 e devolve {cnpj, nome, valido_ate}. Levanta ErroAdge se a senha/arquivo estiver errado."""
+    """Abre o .pfx/.p12 e devolve {cnpj, cpf, documento, tipo, nome, valido_ate} (e-CNPJ traz o cnpj; e-CPF traz o cpf). Levanta ErroAdge se a senha/arquivo estiver errado."""
     from cryptography.hazmat.primitives.serialization import pkcs12
     from cryptography.x509.oid import NameOID
     try:
@@ -291,8 +291,11 @@ def ler_certificado(pfx: str, senha: str) -> dict:
     cn = next((a.value for a in cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)), "")
     m = re.search(r"(\d{14})", cn)
     cnpj = m[1] if m else ""
+    m2 = None if cnpj else re.search(r"(?<!\d)(\d{11})(?!\d)", cn)        # e-CPF: "NOME:12345678901"
+    cpf = m2[1] if m2 else ""
     nome = re.sub(r":?\d{11,14}$", "", cn).strip(": ")
-    return {"cnpj": cnpj, "nome": nome, "valido_ate": cert.not_valid_after_utc.date()}
+    return {"cnpj": cnpj, "cpf": cpf, "documento": cnpj or cpf, "tipo": "cnpj" if cnpj else "cpf" if cpf else "",
+            "nome": nome, "valido_ate": cert.not_valid_after_utc.date()}
 
 
 # ----------------------------------------------------------------------------- período e plano

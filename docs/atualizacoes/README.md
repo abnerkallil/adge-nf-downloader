@@ -57,3 +57,5 @@ Os testes (`tests/test_docs.py`) conferem o formato, os códigos e se existe rel
 | ITEM-37 | Verificação de atualização passo a passo |
 | ITEM-38 | Consulta de períodos em lote |
 | ITEM-39 | RBT12 pelas notas consultadas |
+| ITEM-40 | Responsável (CPF ou CNPJ e certificado) |
+| ITEM-41 | Certificado da NF-e na busca (empresa ou responsável) |

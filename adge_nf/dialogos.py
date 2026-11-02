@@ -167,27 +167,29 @@ class DialogoEmpresa(Modal):
         cartao.pack(fill="x")
         c = cartao.corpo
         c.columnconfigure(0, weight=1)
-        rotulo(c, "Pasta", 9, "bold", "suave").grid(row=0, column=0, sticky="w", pady=(0, 3))
+        rotulo(c, "Pasta automatica de Notas Fiscais (opcional)", 9, "bold", "suave").grid(row=0, column=0, sticky="w", pady=(0, 3))
         Campo(c, self.v_destino, largura=40).grid(row=1, column=0, sticky="ew")
         Botao(c, "Procurar...", self._procurar_destino).grid(row=1, column=1, padx=(8, 0))
-        rotulo(c, "Organização das pastas", 9, "bold", "suave").grid(row=2, column=0, sticky="w", pady=(12, 3))
+        rotulo(c, "Se ficar em branco, o programa pedira a pasta Notas Fiscais na primeira consulta e a salvara para esta empresa.",
+               9, cor="suave", largura=px(620)).grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        rotulo(c, "Organização das pastas", 9, "bold", "suave").grid(row=3, column=0, sticky="w", pady=(12, 3))
         self.cb_est = ttk.Combobox(c, state="readonly", values=list(core.ESTRUTURAS.values()), font=F(10))
-        self.cb_est.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.cb_est.grid(row=4, column=0, columnspan=2, sticky="ew")
         self.cb_est.current(list(core.ESTRUTURAS).index(self.v_estrutura.get()))
         o = tk.Frame(c, bg=P.superficie)
-        o.grid(row=4, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        o.grid(row=5, column=0, columnspan=2, sticky="w", pady=(14, 0))
         Interruptor(o, "Criar o relatório de organização (.txt)", self.v_rel).pack(anchor="w", pady=3)
         Interruptor(o, "Criar planilha Excel com resumo e abas (.xlsx)", self.v_csv).pack(anchor="w", pady=3)
-        rotulo(c, "Início do nome dos arquivos", 11, "bold", "verde_escuro").grid(row=5, column=0, columnspan=2, sticky="w", pady=(16, 4))
+        rotulo(c, "Início do nome dos arquivos", 11, "bold", "verde_escuro").grid(row=6, column=0, columnspan=2, sticky="w", pady=(16, 4))
         av = tk.Frame(c, bg=P.superficie)
-        av.grid(row=6, column=0, columnspan=2, sticky="ew")
+        av.grid(row=7, column=0, columnspan=2, sticky="ew")
         av.columnconfigure(1, weight=1)
         rotulo(av, "Prestado", 9, "bold", "suave").grid(row=0, column=0, sticky="w", padx=(0, 12))
         Campo(av, self.v_pref_prest, largura=30).grid(row=0, column=1, sticky="ew", pady=(0, 6))
         rotulo(av, "Tomado", 9, "bold", "suave").grid(row=1, column=0, sticky="w", padx=(0, 12))
         Campo(av, self.v_pref_tom, largura=30).grid(row=1, column=1, sticky="ew")
         rotulo(c, 'Em branco usa "NOTA FISCAL DE SERVIÇO PRESTADO" / "TOMADO". Exemplo: "NOTA FISCAL DE SERVIÇO PRESTADO DE ALUGUEL".',
-               9, cor="suave", largura=px(620)).grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
+               9, cor="suave", largura=px(620)).grid(row=8, column=0, columnspan=2, sticky="w", pady=(6, 0))
         return f
 
     # ------------------------------------------------------------------ ações
@@ -209,7 +211,7 @@ class DialogoEmpresa(Modal):
             self.store.preferencias["pasta_certificados"] = str(Path(c).parent)
 
     def _procurar_destino(self):
-        c = filedialog.askdirectory(parent=self, title="Escolha a pasta de destino",
+        c = filedialog.askdirectory(parent=self, title="Escolha a pasta Notas Fiscais",
                                     initialdir=self.v_destino.get() or self.store.preferencias.get("raiz_padrao") or str(Path.home()))
         if c:
             self.v_destino.set(os.path.normpath(c))
@@ -251,7 +253,7 @@ class DialogoEmpresa(Modal):
         cnpj = re.sub(r"\D", "", self.v_cnpj.get())
         pfx = self.v_pfx.get().strip()
         acao = self.v_acao.get()
-        estrutura = list(core.ESTRUTURAS)[self.cb_est.current()]
+        estrutura = "notas_fiscais" if acao != "calcular" else list(core.ESTRUTURAS)[self.cb_est.current()]
         problema, aba = None, "empresa"
         if not nome:
             problema = "Dê um nome para a empresa."
@@ -261,7 +263,7 @@ class DialogoEmpresa(Modal):
             problema = "O CNPJ precisa ter 14 dígitos. Use \"Validar certificado\" para preencher sozinho."
         elif not (self.v_prest.get() or self.v_tom.get() or self.v_nfe.get() or self.v_paul.get()):
             problema = "Marque pelo menos um tipo de nota."
-        elif acao != "calcular" and (not self.v_destino.get().strip() or not Path(self.v_destino.get().strip()).is_dir()):
+        elif self.v_destino.get().strip() and not Path(self.v_destino.get().strip()).is_dir():
             problema, aba = "Escolha a pasta onde os XMLs serão salvos.", "destino"
         elif self.novo and not self.v_senha.get():
             problema = "Digite a senha do certificado."

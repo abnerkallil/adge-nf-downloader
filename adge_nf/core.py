@@ -54,6 +54,7 @@ ORDEM_CATEGORIAS = list(CATEGORIAS)
 # Estruturas de pasta de destino
 ESTRUTURAS = {
     "adge": "Padrão Adge: Cliente \\ Departamento Fiscal \\ Notas Fiscais \\ AAAA \\ MM-Mês",
+    "notas_fiscais": "Notas Fiscais: pasta selecionada \\ AAAA \\ MM-Mês (cria apenas o que faltar)",
     "ano_mes": "Ano e mês: Pasta \\ AAAA \\ MM-Mês (cria o que faltar)",
     "direto": "Direto: todas as notas na pasta escolhida",
 }
@@ -456,7 +457,7 @@ def resolver_destino(base: Path, estrutura: str, ano: int, mes: int, criar: bool
     if estrutura == "direto":
         return base, []
     mes_nome = f"{mes:02d}-{MESES[mes - 1]}"
-    if estrutura == "ano_mes":
+    if estrutura in ("ano_mes", "notas_fiscais"):
         passos = [(str(ano), lambda n: 1 if n == str(ano) else 0, True), (mes_nome, _teste_mes(mes), True)]
     else:
         passos = [

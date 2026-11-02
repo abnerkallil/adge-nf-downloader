@@ -229,7 +229,7 @@ class DialogoBusca(Modal):
         self.l_marcas_dica.pack(anchor="w")
         self.marcas = {}
         self.f_acoes_totais = tk.Frame(self.f_bloco, bg=P.fundo)
-        self.b_avancado = Botao(self.f_acoes_totais, "Informações avançadas", self._avancado, estilo="suave", pady=6)
+        self.b_avancado = Botao(self.f_acoes_totais, "Relatórios", self._avancado, estilo="suave", pady=6)
         self.b_copiar = Botao(self.f_acoes_totais, "Copiar totais", self._copiar, pady=6)
         self.l_aviso = rotulo(pai, "", 10, cor="aviso_texto", largura=px(980))
         self.l_aviso.pack(anchor="w", pady=(8, 0))
@@ -724,11 +724,16 @@ class DialogoBusca(Modal):
         emp, ano, mes = self.consulta
         destino_prev, aviso_dest = None, ""
         if self.pasta_manual:       # em lote, cada mês ganha a sua subpasta (ano\mês) dentro da pasta escolhida
-            emp = dict(emp, destino=self.pasta_manual, estrutura="ano_mes" if self.lote_periodos else "direto")
+            emp = dict(emp, destino=self.pasta_manual, estrutura="direto")
         if self.da_pasta:
             aviso_dest = f"Notas lidas da pasta onde foram salvas: {self.da_pasta}. Nenhuma consulta nova foi feita."
         elif emp["acao"] == "calcular" and not self.pasta_manual:
             aviso_dest = "Só o total: as notas ainda não foram salvas. Use \"Escolher pasta...\" se quiser guardar os XMLs e manter esta consulta no histórico."
+        if not self.pasta_manual and not str(emp.get("destino") or "").strip() and emp["acao"] != "calcular":
+            if self._pedir_pasta_automatica(emp):
+                emp = dict(self.emp)
+            else:
+                aviso_dest = "Nenhuma pasta automatica foi definida. Use \"Escolher pasta...\" para salvar manualmente os XMLs."
         if emp["acao"] != "calcular" or self.pasta_manual:
             try:
                 if not str(emp["destino"]).strip():
@@ -1029,11 +1034,35 @@ class DialogoBusca(Modal):
         from .avancado import DialogoAvancado
         DialogoAvancado(self, self.store, self.emp, self.resultado, self.sel)
 
+    def _pedir_pasta_automatica(self, emp):
+        """Pede a pasta Notas Fiscais uma vez e salva o caminho na empresa."""
+        if getattr(self, "_pedindo_pasta", False):
+            return False
+        self._pedindo_pasta = True
+        try:
+            inicial = emp.get("destino") or self.store.preferencias.get("raiz_padrao") or str(Path.home())
+            c = filedialog.askdirectory(parent=self, title="Escolha a pasta Notas Fiscais da empresa",
+                                        initialdir=inicial if Path(inicial).is_dir() else str(Path.home()))
+            if not c:
+                return False
+            c = os.path.normpath(c)
+            self.emp["destino"] = c
+            self.emp["estrutura"] = "notas_fiscais"
+            self.store.salvar_empresa(self.emp)
+            self.store.preferencias["raiz_padrao"] = str(Path(c).parent)
+            self.store.salvar()
+            return True
+        except OSError as e:
+            ui.erro(self, "Nao consegui salvar a pasta automatica", str(e))
+            return False
+        finally:
+            self._pedindo_pasta = False
+
     def _escolher_pasta(self):
         if not self.resultado:
             return
         base = self.pasta_manual or self.resultado["emp"].get("destino") or self.store.preferencias.get("raiz_padrao") or str(Path.home())
-        c = filedialog.askdirectory(parent=self, title="Escolha a pasta onde salvar os XMLs",
+        c = filedialog.askdirectory(parent=self, title="Escolha a pasta especifica onde salvar os XMLs",
                                     initialdir=base if Path(base).is_dir() else str(Path.home()))
         if not c:
             return

@@ -86,12 +86,23 @@ class DialogoDadosFiscais(Modal):
         self.v_presuncao = tk.StringVar(value=f"{f['presuncao']}%")
         self.v_outras = tk.StringVar(value=num_br(f["outras_despesas"]) if f["outras_despesas"] else "")
         self.v_prof = tk.BooleanVar(value=f["profissao_regulamentada"])
+        self._linhas_regime = {"simples": [], "presumido": [], "real": []}
 
         def linha(r, texto, widget, dica=""):
-            rotulo(g, texto, 10).grid(row=r, column=0, sticky="w", pady=5, padx=(0, 16))
+            rot = rotulo(g, texto, 10)
+            rot.grid(row=r, column=0, sticky="w", pady=5, padx=(0, 16))
             widget.grid(row=r, column=1, sticky="w", pady=5)
+            extras = [rot, widget]
             if dica:
-                rotulo(g, dica, 9, cor="suave").grid(row=r, column=2, sticky="w", padx=(10, 0))
+                d = rotulo(g, dica, 9, cor="suave")
+                d.grid(row=r, column=2, sticky="w", padx=(10, 0))
+                extras.append(d)
+            grupos = {0: ("simples", "presumido", "real"), 1: ("simples", "presumido", "real"),
+                      2: ("simples", "presumido", "real"), 3: ("simples",), 4: ("simples",),
+                      5: ("simples", "presumido", "real"), 6: ("presumido",),
+                      7: ("real",), 8: ("simples", "presumido", "real")}
+            for regime in grupos.get(r, ("simples", "presumido", "real")):
+                self._linhas_regime[regime].extend(extras)
 
         linha(0, "Regime atual", ttk.Combobox(g, textvariable=self.v_regime, values=list(regimes.NOMES.values()),
                                               state="readonly", width=22, font=F(10)))
@@ -105,6 +116,8 @@ class DialogoDadosFiscais(Modal):
                                                               state="readonly", width=6, font=F(10)), "32% serviços em geral")
         linha(7, "Outras despesas mensais (R$)", ui.Campo(g, self.v_outras, largura=18), "para o Lucro Real")
         linha(8, "", Interruptor(g, "Profissão regulamentada (redução de 30% na reforma)", self.v_prof))
+        self.v_regime.trace_add("write", lambda *_: self._atualizar_campos_regime())
+        self._atualizar_campos_regime()
         if sugestao_rbt12 and sugestao_rbt12.get("valor", 0) > 0:
             self._sugestao(sugestao_rbt12)
         self.l_erro = rotulo(self, "", 10, cor="erro", largura=px(560))
@@ -115,6 +128,15 @@ class DialogoDadosFiscais(Modal):
         Botao(lin, "Salvar e continuar", self._salvar, estilo="primario").pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda *_: self.destroy())
         self.mostrar()
+
+    def _atualizar_campos_regime(self):
+        regime = next((k for k, v in regimes.NOMES.items() if v == self.v_regime.get()), "simples")
+        for nome, widgets in self._linhas_regime.items():
+            for widget in widgets:
+                if nome == regime:
+                    widget.grid()
+                else:
+                    widget.grid_remove()
 
     def _sugestao(self, r: dict):
         """RBT12 calculado das NFS-e que a própria consulta já trouxe (nenhuma consulta a mais)."""
@@ -161,7 +183,7 @@ class DialogoDadosFiscais(Modal):
 # ============================================================================= janela principal
 class DialogoAvancado(Modal):
     def __init__(self, pai, store, emp: dict, resultado: dict, selecao=None):
-        super().__init__(pai, f"Informações avançadas — {emp['nome']}", margem=0)
+        super().__init__(pai, f"Relatórios - {emp['nome']}", margem=0)
         self.store, self.emp, self.r = store, emp, resultado
         self.resizable(True, True)
         self.geometry(f"{px(1040)}x{px(800)}")
@@ -207,7 +229,7 @@ class DialogoAvancado(Modal):
 
     # ------------------------------------------------------------------ partes
     def _topo(self):
-        ui.titulo(self.corpo, "Informações avançadas",
+        ui.titulo(self.corpo, "Relatórios",
                   f"{self.emp['nome']} · {core.mes_exibicao(self.r['mes'])}/{self.r['ano']}").pack(anchor="w", pady=(0, 8))
         self.l_qtd = rotulo(self.corpo, "", 10, cor="suave", largura=px(960))
         self.l_qtd.pack(anchor="w")

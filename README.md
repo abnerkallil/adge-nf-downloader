@@ -12,6 +12,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 
 ## Principais recursos
 - **Identidade visual Adge** (v1.7.8): logotipo e símbolo oficiais, paleta do BrandBook aplicada a todas as telas e gráfico com diferenciação visual entre participantes.
+- **Relatórios por regime e destinos automáticos** (v1.7.9): os dados fiscais exibem apenas campos do regime selecionado e os XMLs usam a pasta Notas Fiscais salva por empresa, com ano e mês criados somente quando necessários.
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.
@@ -19,14 +20,14 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
   relatório, com marcas para escolher o que conta nos totais, no gráfico e na análise de regimes. Veja a seção **NF-e** abaixo.
 - **Consulta de períodos em lote** (v1.7.5): uma caixa abaixo da lista de meses, desmarcada por padrão, inclui na mesma busca cada
   mês clicado. As fontes são consultadas uma vez só e o resultado mostra cada mês, com o total do lote; gravar salva todos.
-- **RBT12 sugerido** (v1.7.5): em **Informações avançadas**, a receita dos 12 meses anteriores é sugerida a partir das NFS-e
+- **RBT12 sugerido** (v1.7.5): em **Relatórios**, a receita dos 12 meses anteriores é sugerida a partir das NFS-e
   prestadas já baixadas na consulta, sem consulta extra (não inclui NF-e de mercadorias nem notas fora do Ambiente Nacional).
 - **Responsável** (v1.7.6), primeira opção do menu lateral: cadastra o CPF ou o CNPJ de quem o emitente cita no autXML das notas
   (por exemplo, o contador) e o certificado A1 dele, para puxar as NF-e de venda. Veja a seção **Responsável** abaixo.
 - **Nota Paulistana** (Prefeitura de São Paulo), busca separada do Ambiente Nacional, só para conferência. Veja a seção abaixo.
 - Organização automática dos arquivos em pastas por cliente, ano e mês, com nomes padronizados.
 - **Planilha Excel (.xlsx)** com aba geral colorida, abas separadas por tipo de nota e aba de notas canceladas.
-- **Informações avançadas**: gráfico de pizza e comparativo de regimes adequado ao enquadramento da empresa
+- **Relatórios**: gráfico de pizza e comparativo de regimes adequado ao enquadramento da empresa
   (Simples: DAS unificado × regime regular de IBS/CBS; Presumido e Real: um contra o outro, hoje e com a reforma),
   com estimativa de créditos das notas tomadas.
 - Cadastro de várias empresas em **cartões**, com senhas protegidas no Cofre do Windows e aviso de validade do certificado.
@@ -116,8 +117,8 @@ A planilha é gerada na mesma pasta dos XMLs e contém:
 
 Arquivos existentes nunca são sobrescritos: se já houver uma planilha com o mesmo nome, a nova recebe o sufixo `(2)`.
 
-## Informações avançadas
-Depois de buscar as notas, o botão **Informações avançadas** abre:
+## Relatórios
+Depois de buscar as notas, o botão **Relatórios** abre:
 - **Gráfico de pizza** do período, com legenda ao lado. O centro mostra o saldo líquido: o que entra soma, o que sai reduz, e muda
   a cada marca ligada ou desligada. Pode ser visto por cliente/fornecedor, por tipo de serviço
   (itens da Lei Complementar 116, lidos do código de tributação da própria nota) ou por prestado × tomado.

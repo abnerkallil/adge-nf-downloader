@@ -164,6 +164,8 @@ class Pastas(unittest.TestCase):
             t = pathlib.Path(t)
             d, _ = core.resolver_destino(t, "ano_mes", 2026, 9, True)
             self.assertEqual(d, t / "2026" / "09-Setembro")
+            d2, _ = core.resolver_destino(t, "notas_fiscais", 2026, 10, True)
+            self.assertEqual(d2, t / "2026" / "10-Outubro")
             self.assertEqual(core.resolver_destino(t, "direto", 2026, 9, True)[0], t)
             with self.assertRaises(core.ErroAdge):
                 core.resolver_destino(t / "nao-existe", "direto", 2026, 9, False)

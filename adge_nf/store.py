@@ -32,7 +32,7 @@ def pasta_dados() -> Path:
 def empresa_padrao() -> dict:
     return {
         "id": uuid.uuid4().hex[:12], "nome": "", "cnpj": "", "pfx": "", "senha_cifrada": "",
-        "destino": "", "estrutura": "ano_mes",
+        "destino": "", "estrutura": "notas_fiscais",
         "tipos": {"prestado": True, "tomado": True}, "nfe": False, "nfe_ciencia": False, "paulistana": False,
         "acao": "ambos",              # ambos | calcular | baixar
         "relatorio": True, "planilha": False,

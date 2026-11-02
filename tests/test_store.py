@@ -138,8 +138,8 @@ class Armazenamento_(unittest.TestCase):
             a.apagar_tudo()                              # repetir não pode falhar
             self.assertEqual(self.novo(t, CofreFalso()).empresas, [])
 
-    def test_empresa_nova_nao_usa_estrutura_adge(self):
-        self.assertEqual(empresa_padrao()["estrutura"], "ano_mes")
+    def test_empresa_nova_usa_pasta_notas_fiscais(self):
+        self.assertEqual(empresa_padrao()["estrutura"], "notas_fiscais")
 
     def test_arquivo_corrompido_nao_derruba(self):
         with tempfile.TemporaryDirectory() as t:

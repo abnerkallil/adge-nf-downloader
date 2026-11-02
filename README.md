@@ -11,7 +11,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 - Cada empresa precisa do **próprio** certificado A1, pois o ADN só entrega as notas do CNPJ do certificado.
 
 ## Principais recursos
-- **Identidade visual Adge** (v1.7.7): menu lateral com o logotipo oficial, símbolo da marca na tela Sobre e paleta Adge aplicada aos temas claro e escuro.
+- **Identidade visual Adge** (v1.7.8): logotipo e símbolo oficiais, paleta do BrandBook aplicada a todas as telas e gráfico com diferenciação visual entre participantes.
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.

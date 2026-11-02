@@ -6,8 +6,19 @@ from . import classificacao, core
 
 # Cores do gráfico derivadas da paleta da Adge. A ordem alterna verdes,
 # neutros e azuis secundários para manter leitura sem sair da identidade.
-PALETA = ["#52A045", "#3F6620", "#6FA037", "#B3C8A4", "#5C6957", "#677C82", "#99B5BD", "#7E8083", "#D8E0BC", "#BEC7BC"]
-COR_OUTROS = "#DFDED9"
+PALETA = [
+    "#52A045",  # verde Adge
+    "#3F4E53",  # azul-pedra
+    "#B86E4B",  # terracota
+    "#3F6620",  # verde escuro
+    "#A79B55",  # oliva
+    "#1D1D1B",  # preto estrutural
+    "#677C82",  # azul ardósia
+    "#8AAE45",  # verde claro
+    "#7E8083",  # cinza
+    "#B3C8A4",  # sage
+]
+COR_OUTROS = "#BEC7BC"
 MODOS = {"parte": "Cliente / fornecedor", "servico": "Serviço (LC 116) ou CFOP", "tipo": "Tipo de nota"}
 FILTROS = {"ambos": "Prestados e tomados", "prestado": "Só prestados", "tomado": "Só tomados"}   # só para chamadas antigas
 ROTULO_TIPO = {"servico_prestado": "Serviços prestados", "servico_tomado": "Serviços tomados"}

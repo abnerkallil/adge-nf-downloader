@@ -22,19 +22,19 @@ TEMAS = {
         # Paleta baseada no BrandBook da Adge: verde #52A045, preto e neutros
         # quentes da paleta secundária. O creme reduz o aspecto de "tema padrão"
         # e aproxima a interface do posicionamento visual da marca.
-        "fundo": "#F9F8F2", "superficie": "#FFFFFF", "campo": "#FFFFFF", "borda": "#DFDED9", "borda_forte": "#BEC7BC",
-        "texto": "#1D1D1B", "suave": "#4F4F51", "verde": "#52A045", "verde_hover": "#3F6620", "verde_escuro": "#3F6620",
-        "verde_claro": "#F0F4D3", "hover": "#E7E7CE", "erro": "#8B3A3A", "erro_claro": "#F6E7E3",
-        "aviso_fundo": "#F3EFD0", "aviso_texto": "#5C6957", "azul": "#677C82", "azul_claro": "#DFDED9",
+        "fundo": "#FAF6E3", "superficie": "#FFFFFF", "campo": "#FFFFFF", "borda": "#D8E0BC", "borda_forte": "#B3C8A4",
+        "texto": "#1D1D1B", "suave": "#5C6957", "verde": "#52A045", "verde_hover": "#3F6620", "verde_escuro": "#3F6620",
+        "verde_claro": "#EAF1DD", "hover": "#EAF1DD", "erro": "#8B3A3A", "erro_claro": "#F6E7E3",
+        "aviso_fundo": "#F3EFD0", "aviso_texto": "#5C6957", "azul": "#677C82", "azul_claro": "#E5ECEC",
         "lateral": "#000000", "lateral_hover": "#3F4E53", "lateral_ativo": "#52A045", "lateral_texto": "#FAF6E3",
         "lateral_suave": "#BEC7BC",
         "pos_fundo": "#D8E0BC", "pos_texto": "#3F6620", "neg_fundo": "#F6E7E3", "neg_texto": "#8B3A3A",
         "linha_alt": "#FAF6E3", "selecao": "#D8E0BC",
     },
     "escuro": {
-        "fundo": "#1D1D1B", "superficie": "#2B302D", "campo": "#1D1D1B", "borda": "#4F4F51", "borda_forte": "#677C82",
+        "fundo": "#1D1D1B", "superficie": "#2B302D", "campo": "#242824", "borda": "#4F4F51", "borda_forte": "#677C82",
         "texto": "#FAF6E3", "suave": "#BEC7BC", "verde": "#6FA037", "verde_hover": "#8AB84E", "verde_escuro": "#B3C8A4",
-        "verde_claro": "#3F4E53", "hover": "#3F4E53", "erro": "#E9A39A", "erro_claro": "#4A2B2A",
+        "verde_claro": "#3F4E53", "hover": "#465A55", "erro": "#E9A39A", "erro_claro": "#4A2B2A",
         "aviso_fundo": "#4B4528", "aviso_texto": "#F3EFD0", "azul": "#99B5BD", "azul_claro": "#3F4E53",
         "lateral": "#000000", "lateral_hover": "#1D1D1B", "lateral_ativo": "#52A045", "lateral_texto": "#FAF6E3",
         "lateral_suave": "#BEC7BC",

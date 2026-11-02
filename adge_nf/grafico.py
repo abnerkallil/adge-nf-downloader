@@ -4,8 +4,10 @@ from __future__ import annotations
 from . import cfop as cfop_mod
 from . import classificacao, core
 
-PALETA = ["#1B9E5A", "#2F80ED", "#F2994A", "#9B51E0", "#EB5757", "#2DB7C9", "#E0B000", "#7BC47F", "#C2599B", "#4F6D7A"]
-COR_OUTROS = "#B8C2BC"
+# Cores do gráfico derivadas da paleta da Adge. A ordem alterna verdes,
+# neutros e azuis secundários para manter leitura sem sair da identidade.
+PALETA = ["#52A045", "#3F6620", "#6FA037", "#B3C8A4", "#5C6957", "#677C82", "#99B5BD", "#7E8083", "#D8E0BC", "#BEC7BC"]
+COR_OUTROS = "#DFDED9"
 MODOS = {"parte": "Cliente / fornecedor", "servico": "Serviço (LC 116) ou CFOP", "tipo": "Tipo de nota"}
 FILTROS = {"ambos": "Prestados e tomados", "prestado": "Só prestados", "tomado": "Só tomados"}   # só para chamadas antigas
 ROTULO_TIPO = {"servico_prestado": "Serviços prestados", "servico_tomado": "Serviços tomados"}

@@ -1,6 +1,7 @@
 """Visual do programa: paleta (claro/escuro), fontes e componentes de cantos arredondados.
 
-Tudo é Tkinter puro (Canvas), sem imagens nem bibliotecas extras: o instalador não cresce e o programa continua leve.
+Tudo é Tkinter puro (Canvas), com os dois PNGs oficiais da marca carregados somente pela janela principal;
+não há biblioteca gráfica extra e o programa continua leve.
 Regra de uso: os componentes pegam a cor de fundo do "pai" na hora de criar, então crie sempre os widgets dentro de
 `tk.Frame`/`Cartao` (e não `ttk.Frame`). Ao trocar de tema, a janela principal é reconstruída.
 """
@@ -18,24 +19,27 @@ from . import NOME_APP
 # ----------------------------------------------------------------------------- paleta
 TEMAS = {
     "claro": {
-        "fundo": "#F3F6F4", "superficie": "#FFFFFF", "campo": "#FFFFFF", "borda": "#DDE6E0", "borda_forte": "#C5D3CA",
-        "texto": "#1F2933", "suave": "#667085", "verde": "#1B9E5A", "verde_hover": "#168A4E", "verde_escuro": "#127A44",
-        "verde_claro": "#E7F6EE", "hover": "#ECF3EE", "erro": "#B42318", "erro_claro": "#FDE7E7",
-        "aviso_fundo": "#FFF6D6", "aviso_texto": "#7A5B00", "azul": "#1D4ED8", "azul_claro": "#E4ECFD",
-        "lateral": "#0F5C36", "lateral_hover": "#17704A", "lateral_ativo": "#1B9E5A", "lateral_texto": "#E3F5E9",
-        "lateral_suave": "#A9D9BF",
-        "pos_fundo": "#E3F5E9", "pos_texto": "#1F9D5B", "neg_fundo": "#FDE7E7", "neg_texto": "#C0392B",
-        "linha_alt": "#F8FBF9", "selecao": "#DDF1E5",
+        # Paleta baseada no BrandBook da Adge: verde #52A045, preto e neutros
+        # quentes da paleta secundária. O creme reduz o aspecto de "tema padrão"
+        # e aproxima a interface do posicionamento visual da marca.
+        "fundo": "#F9F8F2", "superficie": "#FFFFFF", "campo": "#FFFFFF", "borda": "#DFDED9", "borda_forte": "#BEC7BC",
+        "texto": "#1D1D1B", "suave": "#4F4F51", "verde": "#52A045", "verde_hover": "#3F6620", "verde_escuro": "#3F6620",
+        "verde_claro": "#F0F4D3", "hover": "#E7E7CE", "erro": "#8B3A3A", "erro_claro": "#F6E7E3",
+        "aviso_fundo": "#F3EFD0", "aviso_texto": "#5C6957", "azul": "#677C82", "azul_claro": "#DFDED9",
+        "lateral": "#000000", "lateral_hover": "#3F4E53", "lateral_ativo": "#52A045", "lateral_texto": "#FAF6E3",
+        "lateral_suave": "#BEC7BC",
+        "pos_fundo": "#D8E0BC", "pos_texto": "#3F6620", "neg_fundo": "#F6E7E3", "neg_texto": "#8B3A3A",
+        "linha_alt": "#FAF6E3", "selecao": "#D8E0BC",
     },
     "escuro": {
-        "fundo": "#101713", "superficie": "#18221C", "campo": "#101713", "borda": "#27352D", "borda_forte": "#35473C",
-        "texto": "#E8EEEA", "suave": "#9AABA1", "verde": "#2DBE74", "verde_hover": "#26A866", "verde_escuro": "#5BD39A",
-        "verde_claro": "#1B3A2A", "hover": "#1F2C25", "erro": "#F08A80", "erro_claro": "#3A1D1D",
-        "aviso_fundo": "#3A3115", "aviso_texto": "#F3D675", "azul": "#8DB1FF", "azul_claro": "#1D2A4A",
-        "lateral": "#0A3822", "lateral_hover": "#0F4A2D", "lateral_ativo": "#1B9E5A", "lateral_texto": "#E3F5E9",
-        "lateral_suave": "#8CC4A6",
-        "pos_fundo": "#16352A", "pos_texto": "#5BD39A", "neg_fundo": "#3A1D1D", "neg_texto": "#F08A80",
-        "linha_alt": "#141D18", "selecao": "#1F3A2B",
+        "fundo": "#1D1D1B", "superficie": "#2B302D", "campo": "#1D1D1B", "borda": "#4F4F51", "borda_forte": "#677C82",
+        "texto": "#FAF6E3", "suave": "#BEC7BC", "verde": "#6FA037", "verde_hover": "#8AB84E", "verde_escuro": "#B3C8A4",
+        "verde_claro": "#3F4E53", "hover": "#3F4E53", "erro": "#E9A39A", "erro_claro": "#4A2B2A",
+        "aviso_fundo": "#4B4528", "aviso_texto": "#F3EFD0", "azul": "#99B5BD", "azul_claro": "#3F4E53",
+        "lateral": "#000000", "lateral_hover": "#1D1D1B", "lateral_ativo": "#52A045", "lateral_texto": "#FAF6E3",
+        "lateral_suave": "#BEC7BC",
+        "pos_fundo": "#3F4E53", "pos_texto": "#B3C8A4", "neg_fundo": "#4A2B2A", "neg_texto": "#E9A39A",
+        "linha_alt": "#252A27", "selecao": "#5C6957",
     },
 }
 
@@ -107,6 +111,7 @@ def px(n: float) -> int:
 
 # ----------------------------------------------------------------------------- fontes
 _FAMILIA = None
+_FAMILIAS_MARCA = ("BW Surco", "Eau Sans")
 
 
 def _familia(raiz=None) -> str:
@@ -116,7 +121,8 @@ def _familia(raiz=None) -> str:
             nomes = set(tkfont.families(raiz))
         except tk.TclError:
             nomes = set()
-        _FAMILIA = "Segoe UI" if "Segoe UI" in nomes else ("DejaVu Sans" if "DejaVu Sans" in nomes else "Helvetica")
+        _FAMILIA = next((f for f in _FAMILIAS_MARCA if f in nomes), None)
+        _FAMILIA = _FAMILIA or ("Segoe UI" if "Segoe UI" in nomes else ("DejaVu Sans" if "DejaVu Sans" in nomes else "Helvetica"))
     return _FAMILIA
 
 
@@ -191,7 +197,7 @@ def radio(pai, texto, valor, variavel, comando=None, **kw):
 class Cartao(tk.Canvas):
     """Quadro de cantos arredondados. Coloque o conteúdo em `.corpo` (um tk.Frame com o fundo do cartão)."""
 
-    def __init__(self, pai, fundo=None, borda=None, raio=14, pad=16, pady=None, **kw):
+    def __init__(self, pai, fundo=None, borda=None, raio=12, pad=16, pady=None, **kw):
         self.fundo = _cor(fundo) if fundo else P.superficie
         self.cor_borda = _cor(borda) if borda else P.borda
         self.raio, self.pad = px(raio), px(pad)
@@ -249,7 +255,7 @@ class Botao(tk.Canvas):
         "lateral": ("lateral_hover", "lateral_ativo", None, "#FFFFFF", "#FFFFFF"),
     }
 
-    def __init__(self, pai, texto="", comando=None, estilo="secundario", tam=10, padx=18, pady=9, raio=10,
+    def __init__(self, pai, texto="", comando=None, estilo="secundario", tam=10, padx=18, pady=9, raio=8,
                  largura=None, alinhar="center", **kw):
         self._texto, self._comando, self._estilo, self._estado = texto, comando, estilo, "normal"
         self._raio, self._alinhar, self._tam, self._padx = px(raio), alinhar, tam, px(padx)
@@ -360,7 +366,7 @@ class Botao(tk.Canvas):
 class Campo(tk.Canvas):
     """Campo de texto de cantos arredondados. O tk.Entry fica em `.entry`."""
 
-    def __init__(self, pai, variavel=None, largura=24, mostrar="", tam=10, raio=10, **kw):
+    def __init__(self, pai, variavel=None, largura=24, mostrar="", tam=10, raio=8, **kw):
         super().__init__(pai, bg=_bg(pai), highlightthickness=0, bd=0, **kw)
         self._raio, self._pad = px(raio), px(10)
         self.entry = tk.Entry(self, textvariable=variavel, show=mostrar, relief="flat", bd=0, highlightthickness=0,

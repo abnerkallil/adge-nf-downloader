@@ -22,7 +22,11 @@ build_exe = {
     "packages": ["adge_nf", "tkinter", "requests", "requests_pkcs12", "keyring", "keyring.backends", "win32ctypes",
                  "openpyxl", "et_xmlfile", "cryptography", "certifi", "urllib3", "idna", "charset_normalizer"],
     "includes": ["keyring.backends.Windows"],
-    "include_files": [("adge_nf/icone.ico", "icone.ico")],
+    "include_files": [
+        ("adge_nf/icone.ico", "icone.ico"),
+        ("adge_nf/marca/Logoutilizada para os relatorios.png", "marca/Logoutilizada para os relatorios.png"),
+        ("adge_nf/marca/SimboloVerde.png", "marca/SimboloVerde.png"),
+    ],
     "excludes": ["unittest", "pydoc", "test", "distutils"],
     "include_msvcr": True,
 }

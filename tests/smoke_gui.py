@@ -58,6 +58,7 @@ def principal():
         store.preferencias["boas_vindas_vista"] = True       # o cartão de boas-vindas tem teste próprio (no fim)
         app = A.App(store)
         app.update()
+        assert app._marca_logo is not None and app._marca_simbolo is not None
         passo("janela principal abre")
 
         # --- cadastro de empresa
@@ -115,7 +116,7 @@ def principal():
         passo("busca mostra faturamento e lista de notas")
         # saldo líquido (prestado − tomado): verde se positivo; totais e botões no mesmo bloco
         assert b.l_saldo_v.cget("text") == "R$ 1.170,50", b.l_saldo_v.cget("text")
-        assert b.c_saldo.fundo.upper() == "#E3F5E9"
+        assert b.c_saldo.fundo.upper() == ui.P.pos_fundo.upper()
         assert b.c_saldo.winfo_ismapped()
         assert b.b_copiar.master is b.f_acoes_totais and b.b_avancado.master is b.f_acoes_totais
         assert b.f_acoes_totais.master is b.f_bloco and b.b_copiar.winfo_ismapped()
@@ -129,7 +130,7 @@ def principal():
         bn._escolher_mes(8); bn.ano = 2026; bn._atualizar_meses(); bn._buscar()
         assert esperar(lambda: bn.resultado is not None, app)
         assert bn.l_saldo_v.cget("text") == "-R$ 400,00", bn.l_saldo_v.cget("text")
-        assert bn.c_saldo.fundo.upper() == "#FDE7E7" and str(bn.l_saldo_v.cget("fg")).upper() == "#C0392B"
+        assert bn.c_saldo.fundo.upper() == ui.P.neg_fundo.upper() and str(bn.l_saldo_v.cget("fg")).upper() == ui.P.neg_texto.upper()
         bn.destroy()
         passo("saldo líquido muda de cor (positivo/negativo)")
 
@@ -605,7 +606,7 @@ def principal():
 
         app._ir("config"); app.update()
         app.v_escuro.set(True); app._alternar_tema()
-        assert esperar(lambda: ui.P.nome == "escuro" and app.pagina == "config" and str(app.lateral.cget("bg")).upper() == "#0A3822", app), ui.P.nome
+        assert esperar(lambda: ui.P.nome == "escuro" and app.pagina == "config" and str(app.lateral.cget("bg")).upper() == ui.P.lateral.upper(), app), ui.P.nome
         assert store.preferencias["tema"] == "escuro"
         app._ir("empresas"); app.update()
         app.v_escuro.set(False) if hasattr(app, "v_escuro") else None

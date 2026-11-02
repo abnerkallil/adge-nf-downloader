@@ -13,6 +13,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 ## Principais recursos
 - **Identidade visual Adge** (v1.7.8): logotipo e símbolo oficiais, paleta do BrandBook aplicada a todas as telas e gráfico com diferenciação visual entre participantes.
 - **Relatórios por regime e destinos automáticos** (v1.7.9): os dados fiscais exibem apenas campos do regime selecionado e os XMLs usam a pasta Notas Fiscais salva por empresa, com ano e mês criados somente quando necessários.
+- **Correção do gráfico** (v1.7.10): as fatias do gráfico passam a ser desenhadas sem sobreposição, mantendo a diferenciação entre todos os participantes.
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.

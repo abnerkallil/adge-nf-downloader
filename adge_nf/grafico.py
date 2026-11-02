@@ -107,6 +107,6 @@ def angulos(itens: list) -> list:
     saida, atual = [], 90.0
     for _, _, pct in itens:
         ext = pct / 100 * 360
-        saida.append((atual, -ext))
-        atual -= ext
+        saida.append((atual, ext))
+        atual += ext
     return saida

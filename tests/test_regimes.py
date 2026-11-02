@@ -225,7 +225,7 @@ class Grafico(unittest.TestCase):
         self.assertTrue(r[-1][0].startswith("Outros ("))
         self.assertAlmostEqual(sum(x[2] for x in r), 100.0)
         ang = grafico.angulos(r)
-        self.assertAlmostEqual(sum(e for _, e in ang), -360.0)
+        self.assertAlmostEqual(sum(e for _, e in ang), 360.0)
 
 
 class MercadoriasTest(unittest.TestCase):

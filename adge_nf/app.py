@@ -1,5 +1,6 @@
 """Janela principal do Adge Group - NF Downloader: menu lateral, empresas, histórico, configurações e sobre."""
 import datetime as dt
+import math
 import os
 import queue
 import sys
@@ -22,6 +23,9 @@ from .ui import P, Botao, Cartao, Chip, Interruptor, Rolavel, F, px, rotulo
 formatar_cnpj = ui.formatar_cnpj
 ACOES = {"ambos": "Calcular + baixar", "calcular": "Só calcular", "baixar": "Só baixar"}
 PAGINAS = (("responsavel", "Responsável"), ("empresas", "Empresas"), ("historico", "Histórico"), ("config", "Configurações"), ("sobre", "Sobre"))
+
+NOME_LOGO_MARCA = "Logoutilizada para os relatorios.png"
+NOME_SIMBOLO_MARCA = "SimboloVerde.png"
 
 
 def quando_humano(iso: str, agora: dt.datetime = None) -> str:
@@ -63,6 +67,8 @@ class App(tk.Tk):
         self.title(NOME_APP)
         self.geometry(f"{px(1100)}x{px(720)}")
         self.minsize(px(900), px(600))
+        self._marca_logo = self._carregar_marca(NOME_LOGO_MARCA, px(184), px(100))
+        self._marca_simbolo = self._carregar_marca(NOME_SIMBOLO_MARCA, px(68), px(68))
         icone = next((c for c in (Path(sys.executable).with_name("icone.ico"), Path(__file__).with_name("icone.ico")) if c.exists()), None)
         if icone and sys.platform == "win32":
             try:
@@ -112,6 +118,22 @@ class App(tk.Tk):
         self.deiconify()
 
     # ------------------------------------------------------------------ estrutura (menu lateral + páginas)
+    def _carregar_marca(self, nome, largura_max, altura_max):
+        """Carrega um asset oficial da marca, procurando a fonte e o pacote congelado."""
+        caminhos = (
+            Path(__file__).with_name("marca") / nome,
+            Path(sys.executable).parent / "marca" / nome,
+        )
+        caminho = next((p for p in caminhos if p.is_file()), None)
+        if not caminho:
+            return None
+        try:
+            imagem = tk.PhotoImage(file=str(caminho))
+            fator = max(1, math.ceil(imagem.width() / largura_max), math.ceil(imagem.height() / altura_max))
+            return imagem.subsample(fator, fator) if fator > 1 else imagem
+        except (tk.TclError, OSError):
+            return None
+
     def _montar(self):
         for w in self.winfo_children():
             w.destroy()
@@ -141,8 +163,11 @@ class App(tk.Tk):
     def _lateral(self):
         marca = tk.Frame(self.lateral, bg=P.lateral)
         marca.pack(fill="x", padx=px(20), pady=(px(26), px(22)))
-        rotulo(marca, "Adge Group", 18, "bold", "#FFFFFF").pack(anchor="w")
-        rotulo(marca, "NF Downloader", 11, cor="lateral_suave").pack(anchor="w")
+        if self._marca_logo:
+            tk.Label(marca, image=self._marca_logo, bg=P.lateral, bd=0, highlightthickness=0).pack(anchor="w")
+        else:
+            rotulo(marca, "ADGE", 20, "bold", "lateral_texto").pack(anchor="w")
+        rotulo(marca, "NF Downloader", 10, cor="lateral_suave").pack(anchor="w", pady=(4, 0))
         self.nav = {}
         for chave, nome in PAGINAS:
             b = Botao(self.lateral, nome, lambda c=chave: self._ir(c), estilo="nav", alinhar="w", largura=186, pady=10, tam=11, padx=16)
@@ -544,6 +569,11 @@ class App(tk.Tk):
         aba = rol.corpo
         c = Cartao(aba, fundo="verde_claro", borda="verde_claro", pad=20)
         c.pack(fill="x", pady=(0, 16))
+        marca_sobre = tk.Frame(c.corpo, bg=P.verde_claro)
+        marca_sobre.pack(fill="x", pady=(0, 12))
+        if self._marca_simbolo:
+            tk.Label(marca_sobre, image=self._marca_simbolo, bg=P.verde_claro, bd=0, highlightthickness=0).pack(side="right")
+        rotulo(marca_sobre, "Adge Brasil", 14, "bold", "verde_escuro").pack(side="left", pady=(4, 0))
         for i, (t, txt) in enumerate(TEXTOS_MISSAO):
             rotulo(c.corpo, t, 11, "bold", "verde_escuro").pack(anchor="w", pady=(0 if i == 0 else 12, 2))
             rotulo(c.corpo, txt, 10, cor="verde_escuro", largura=px(680)).pack(anchor="w")

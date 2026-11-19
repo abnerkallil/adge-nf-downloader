@@ -19,27 +19,28 @@ from . import NOME_APP
 # ----------------------------------------------------------------------------- paleta
 TEMAS = {
     "claro": {
-        # Paleta baseada no BrandBook da Adge: verde #52A045, preto e neutros
-        # quentes da paleta secundária. O creme reduz o aspecto de "tema padrão"
-        # e aproxima a interface do posicionamento visual da marca.
-        "fundo": "#FAF6E3", "superficie": "#FFFFFF", "campo": "#FFFFFF", "borda": "#D8E0BC", "borda_forte": "#B3C8A4",
-        "texto": "#1D1D1B", "suave": "#5C6957", "verde": "#52A045", "verde_hover": "#3F6620", "verde_escuro": "#3F6620",
-        "verde_claro": "#EAF1DD", "hover": "#EAF1DD", "erro": "#8B3A3A", "erro_claro": "#F6E7E3",
-        "aviso_fundo": "#F3EFD0", "aviso_texto": "#5C6957", "azul": "#677C82", "azul_claro": "#E5ECEC",
-        "lateral": "#000000", "lateral_hover": "#3F4E53", "lateral_ativo": "#52A045", "lateral_texto": "#FAF6E3",
-        "lateral_suave": "#BEC7BC",
-        "pos_fundo": "#D8E0BC", "pos_texto": "#3F6620", "neg_fundo": "#F6E7E3", "neg_texto": "#8B3A3A",
-        "linha_alt": "#FAF6E3", "selecao": "#D8E0BC",
+        # Paleta oficial do BrandBook da Adge (mesmo esquema dos relatórios): verde #6FA037,
+        # verde escuro #5C8A2C, preto #1D1D1B, cinzas #6B6B66/#BDBDB5/#CFCFC8, fundo claro
+        # #FAFAF7, fundo verde #EEF4E6 e divisória #E3E3DC. #141414 é o preto dos blocos
+        # estruturais (painel lateral e rodapé), igual em claro e escuro.
+        "fundo": "#FAFAF7", "superficie": "#FFFFFF", "campo": "#FFFFFF", "borda": "#E3E3DC", "borda_forte": "#BDBDB5",
+        "texto": "#1D1D1B", "suave": "#6B6B66", "verde": "#6FA037", "verde_hover": "#5C8A2C", "verde_escuro": "#5C8A2C",
+        "verde_claro": "#EEF4E6", "hover": "#EEF4E6", "erro": "#8B3A3A", "erro_claro": "#F6E7E3",
+        "aviso_fundo": "#F3EFD0", "aviso_texto": "#6B6B66", "azul": "#677C82", "azul_claro": "#E5ECEC",
+        "lateral": "#141414", "lateral_hover": "#262626", "lateral_ativo": "#6FA037", "lateral_texto": "#FAFAF7",
+        "lateral_suave": "#BDBDB5", "lateral_rodape": "#CFCFC8",
+        "pos_fundo": "#EEF4E6", "pos_texto": "#5C8A2C", "neg_fundo": "#F6E7E3", "neg_texto": "#8B3A3A",
+        "linha_alt": "#F0F0EC", "selecao": "#EEF4E6",
     },
     "escuro": {
-        "fundo": "#1D1D1B", "superficie": "#2B302D", "campo": "#242824", "borda": "#4F4F51", "borda_forte": "#677C82",
-        "texto": "#FAF6E3", "suave": "#BEC7BC", "verde": "#6FA037", "verde_hover": "#8AB84E", "verde_escuro": "#B3C8A4",
-        "verde_claro": "#3F4E53", "hover": "#465A55", "erro": "#E9A39A", "erro_claro": "#4A2B2A",
+        "fundo": "#1D1D1B", "superficie": "#262626", "campo": "#141414", "borda": "#3A3A38", "borda_forte": "#6B6B66",
+        "texto": "#FAFAF7", "suave": "#BDBDB5", "verde": "#6FA037", "verde_hover": "#8AB84E", "verde_escuro": "#A9C98B",
+        "verde_claro": "#33421F", "hover": "#33421F", "erro": "#E9A39A", "erro_claro": "#4A2B2A",
         "aviso_fundo": "#4B4528", "aviso_texto": "#F3EFD0", "azul": "#99B5BD", "azul_claro": "#3F4E53",
-        "lateral": "#000000", "lateral_hover": "#1D1D1B", "lateral_ativo": "#52A045", "lateral_texto": "#FAF6E3",
-        "lateral_suave": "#BEC7BC",
-        "pos_fundo": "#3F4E53", "pos_texto": "#B3C8A4", "neg_fundo": "#4A2B2A", "neg_texto": "#E9A39A",
-        "linha_alt": "#252A27", "selecao": "#5C6957",
+        "lateral": "#141414", "lateral_hover": "#262626", "lateral_ativo": "#6FA037", "lateral_texto": "#FAFAF7",
+        "lateral_suave": "#BDBDB5", "lateral_rodape": "#CFCFC8",
+        "pos_fundo": "#33421F", "pos_texto": "#A9C98B", "neg_fundo": "#4A2B2A", "neg_texto": "#E9A39A",
+        "linha_alt": "#242422", "selecao": "#33421F",
     },
 }
 
@@ -111,12 +112,41 @@ def px(n: float) -> int:
 
 # ----------------------------------------------------------------------------- fontes
 _FAMILIA = None
-_FAMILIAS_MARCA = ("BW Surco", "Eau Sans")
+_FAMILIAS_MARCA = ("Catamaran", "BW Surco", "Eau Sans")
+_PASTA_FONTES = Path(__file__).resolve().parent / "marca" / "fonts"
+_FONTES_CATAMARAN = {
+    "normal": "Catamaran-Regular.ttf", "bold": "Catamaran-Bold.ttf",
+    "semibold": "Catamaran-SemiBold.ttf", "extrabold": "Catamaran-ExtraBold.ttf",
+}
+# As variantes SemiBold/ExtraBold são arquivos estáticos com família própria no Windows
+# (GDI só reconhece 4 estilos por família: Regular/Bold/Italic/BoldItalic) — "Catamaran
+# SemiBold" e "Catamaran ExtraBold" ficam acessíveis como famílias separadas.
+_FAMILIAS_PESO = {"semibold": "Catamaran SemiBold", "extrabold": "Catamaran ExtraBold"}
+_FONTES_REGISTRADAS = False
+
+
+def _registrar_fontes_da_marca():
+    """Registra os .ttf da Catamaran só para este processo (sem precisar instalar no Windows
+    nem pedir permissão de administrador) — `AddFontResourceExW` com `FR_PRIVATE`."""
+    global _FONTES_REGISTRADAS
+    if _FONTES_REGISTRADAS or sys.platform != "win32":
+        return
+    _FONTES_REGISTRADAS = True
+    try:
+        import ctypes
+        FR_PRIVATE = 0x10
+        for nome_arquivo in _FONTES_CATAMARAN.values():
+            caminho = _PASTA_FONTES / nome_arquivo
+            if caminho.exists():
+                ctypes.windll.gdi32.AddFontResourceExW(str(caminho), FR_PRIVATE, 0)
+    except Exception:
+        pass  # sem a fonte da marca, cai no fallback (Segoe UI/DejaVu/Helvetica)
 
 
 def _familia(raiz=None) -> str:
     global _FAMILIA
     if _FAMILIA is None:
+        _registrar_fontes_da_marca()
         try:
             nomes = set(tkfont.families(raiz))
         except tk.TclError:
@@ -127,9 +157,12 @@ def _familia(raiz=None) -> str:
 
 
 def F(tam: int = 10, peso: str = "normal"):
-    """Fonte do app. peso: 'normal', 'bold' (semi-negrito no Windows) ou 'italic'."""
+    """Fonte do app. peso: 'normal', 'bold', 'semibold', 'extrabold' (pesos extras da Catamaran;
+    caem em negrito normal fora dela) ou 'italic'."""
     fam = _familia()
-    if peso == "bold":
+    if peso in _FAMILIAS_PESO and fam == "Catamaran":
+        return (_FAMILIAS_PESO[peso], tam)
+    if peso in ("bold", "semibold", "extrabold"):
         return ("Segoe UI Semibold", tam) if fam == "Segoe UI" else (fam, tam, "bold")
     if peso == "italic":
         return (fam, tam, "italic")
@@ -170,7 +203,7 @@ def rotulo(pai, texto="", tam=10, peso="normal", cor="texto", largura=None, just
 
 def titulo(pai, texto, sub=None):
     f = tk.Frame(pai, bg=_bg(pai))
-    rotulo(f, texto, 20, "bold", "verde_escuro").pack(anchor="w")
+    rotulo(f, texto, 20, "bold", "verde_escuro", largura=px(720)).pack(anchor="w")
     if sub:
         rotulo(f, sub, 10, cor="suave", largura=px(720)).pack(anchor="w", pady=(2, 0))
     return f
@@ -660,10 +693,28 @@ class Rolavel(tk.Frame):
         self.tela.pack(side="left", fill="both", expand=True)
         self.corpo = tk.Frame(self.tela, bg=self.fundo, padx=px(pad), pady=px(pad))
         self._id = self.tela.create_window((0, 0), window=self.corpo, anchor="nw")
-        self.corpo.bind("<Configure>", lambda e: self.tela.configure(scrollregion=self.tela.bbox("all")))
+        self.corpo.bind("<Configure>", self._ao_mudar_corpo)
         self.tela.bind("<Configure>", lambda e: self.tela.itemconfigure(self._id, width=e.width))
-        self.bind("<Enter>", lambda e: self.tela.bind_all("<MouseWheel>", self._roda))
-        self.bind("<Leave>", lambda e: self.tela.unbind_all("<MouseWheel>"))
+        # A rolagem do mouse só dispara no widget que está debaixo do cursor. Como o corpo tem
+        # cartões, rótulos e campos dinâmicos (que o Enter/Leave do frame externo não cobre),
+        # cada widget do corpo recebe essa tag exclusiva — assim a roda funciona em qualquer
+        # ponto da área, não só em cima do fundo vazio ou da barrinha.
+        self._tag_roda = f"RolavelRoda{id(self)}"
+        self.bind_class(self._tag_roda, "<MouseWheel>", self._roda)
+        self._aplicar_tag_roda(self)
+        self._aplicar_tag_roda(self.tela)
+
+    def _ao_mudar_corpo(self, e):
+        self.tela.configure(scrollregion=self.tela.bbox("all"))
+        self._aplicar_tag_roda(self.corpo, recursivo=True)
+
+    def _aplicar_tag_roda(self, w, recursivo=False):
+        tags = w.bindtags()
+        if self._tag_roda not in tags:
+            w.bindtags((self._tag_roda, *tags))
+        if recursivo:
+            for filho in w.winfo_children():
+                self._aplicar_tag_roda(filho, recursivo=True)
 
     def _barra(self, a, b):
         self.barra.set(a, b)

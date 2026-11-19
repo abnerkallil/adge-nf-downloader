@@ -222,13 +222,15 @@ def perfil_completo(perfil: dict) -> bool:
 
 
 def configuracao_completa(cfg: dict) -> bool:
-    """Já tem o mínimo para tentar uma emissão: regime, IM, município, endereço do prestador
-    e pelo menos um perfil ativo e completo. O grupo `prest/end` é opcional no XSD oficial
+    """Já tem o mínimo para tentar uma emissão: regime, município, endereço do prestador
+    e pelo menos um perfil ativo e completo. A Inscrição Municipal (`prest/IM`) é opcional no
+    XSD oficial (`minOccurs="0"`, RN 201: só é exigida de quem tem cadastro complementar no CNC
+    do município) — não entra na validação. O grupo `prest/end` também é opcional no leiaute
     (`minOccurs="0"`, confirmado pela thread do motor de emissão) — exigir o endereço aqui é
     uma decisão própria do ADGE (a nota fica mais completa), não uma obrigação do leiaute."""
     if not cfg or cfg.get("regime") not in REGIMES:
         return False
-    if not (cfg.get("inscricao_municipal") and cfg.get("municipio")):
+    if not cfg.get("municipio"):
         return False
     if not cfg.get("endereco", {}).get("logradouro"):
         return False

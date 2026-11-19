@@ -65,6 +65,18 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         valido, erros = validar(xml)
         self.assertTrue(valido, msg=str(erros))
 
+    def test_sem_inscricao_municipal_omite_a_tag_im(self):
+        """IM é opcional (`prest/IM`, minOccurs="0", RN 201) — sem ela, a tag some do XML
+        e a nota continua válida contra o XSD oficial."""
+        empresa_emissao_sem_im = empresa_emissao(inscricao_municipal="")
+        lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
+                           valor=1250.0, competencia="2026-11", data_prestacao="2026-11-05")
+        campos = dps.montar_campos(EMPRESA, empresa_emissao_sem_im, perfil_locacao(), None, lanc)
+        xml = dps.montar_xml(campos, serie="1", numero=3)
+        valido, erros = validar(xml)
+        self.assertTrue(valido, msg=str(erros))
+        self.assertNotIn("<IM>", xml)
+
     def test_endereco_do_prestador_e_do_tomador_quando_preenchidos(self):
         """`prest/end`/`toma/end` (ambos opcionais no XSD) entram quando os dados existem — gap
         fechado pelo Dev A em v2/config-emissao (commit 36caf9b)."""

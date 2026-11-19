@@ -4,13 +4,15 @@ Grava em `empresa["emissao"]` (ver `config_schema.py`). Não mexe na busca/downl
 `empresa["fiscal"]` (simulação de regimes), que são outras telas.
 """
 import tkinter as tk
-from tkinter import ttk
+from pathlib import Path
+from tkinter import filedialog, ttk
 
 from .. import grafico, ui
 from ..core import ErroAdge
 from ..ui import P, Botao, Campo, Cartao, Chip, Interruptor, Modal, Rolavel, Segmentado, F, px, rotulo
 from . import config_schema as es
 from . import dados_oficiais as do
+from . import tomadores_planilha as tpl
 
 
 def caixa_texto(pai, altura=3, largura=40) -> tk.Frame:
@@ -37,9 +39,11 @@ def campo_rotulado(pai, row, texto, widget, dica="", col=0, columnspan=2):
     return row + (3 if dica else 2)
 
 
-def campo_busca(pai, variavel, funcao_busca, largura=40, linhas_lista=5):
+def campo_busca(pai, variavel, funcao_busca, largura=40, linhas_lista=5, ao_escolher=None):
     """Campo de texto com busca embaixo, tipo o combo do portal: filtra as opções enquanto
-    digita e clicar numa opção substitui o texto do campo por ela (código + descrição)."""
+    digita e clicar numa opção substitui o texto do campo por ela (código + descrição).
+    `ao_escolher(texto_escolhido)`, se passado, roda depois de escolher uma opção da lista —
+    usado para preencher outros campos sozinho (ex.: código IBGE ao escolher o município)."""
     moldura = tk.Frame(pai, bg=ui._bg(pai))
     campo = Campo(moldura, variavel, largura=largura)
     campo.pack(fill="x")
@@ -61,8 +65,11 @@ def campo_busca(pai, variavel, funcao_busca, largura=40, linhas_lista=5):
     def escolher(_e=None):
         sel = lista.curselection()
         if sel:
-            variavel.set(lista.get(sel[0]))
+            escolhido = lista.get(sel[0])
+            variavel.set(escolhido)
             lista.pack_forget()
+            if ao_escolher:
+                ao_escolher(escolhido)
 
     campo.entry.bind("<KeyRelease>", atualizar)
     campo.entry.bind("<FocusIn>", atualizar)
@@ -219,6 +226,18 @@ class DialogoPerfilServico(Modal):
         rotulo(g, "CST do PIS/COFINS: 2 dígitos (00-09, 49-56, 60-67, 70-75, 98 ou 99 — lista fechada do XSD).",
               9, cor="suave", largura=px(560)).grid(row=2, column=0, sticky="w", pady=(8, 0))
         self._atualizar_pis_cofins()
+        self.v_pc_regime.trace_add("write", lambda *_: self._sugerir_cst_cumulativo())
+        self._sugerir_cst_cumulativo()
+
+    def _sugerir_cst_cumulativo(self):
+        """No regime Cumulativo, o CST 01 ("Operação Tributável com Alíquota Básica") é o mais comum —
+        sugere nos dois campos quando ainda estiverem vazios, sem sobrescrever o que já foi digitado."""
+        if self.v_pc_regime.get() != es.PIS_COFINS_REGIMES["cumulativo"]:
+            return
+        if not self.v_cst_pis.get().strip():
+            self.v_cst_pis.set("01")
+        if not self.v_cst_cofins.get().strip():
+            self.v_cst_cofins.set("01")
 
     def _atualizar_pis_cofins(self):
         estado = "normal" if self.v_pc_incluir.get() else "disabled"
@@ -414,11 +433,12 @@ class DialogoTomador(Modal):
         campo_rotulado(ge, 6, "Complemento", Campo(ge, self.v_complemento, largura=40))
         campo_rotulado(ge, 9, "Bairro", Campo(ge, self.v_bairro, largura=22), col=0, columnspan=1)
         linha_mun = tk.Frame(ge, bg=P.superficie)
-        Campo(linha_mun, self.v_end_municipio, largura=18).pack(side="left")
+        campo_busca(linha_mun, self.v_end_municipio, do.buscar_municipio, largura=18,
+                    ao_escolher=self._ao_escolher_municipio_tomador).pack(side="left")
         Campo(linha_mun, self.v_end_uf, largura=4).pack(side="left", padx=(6, 0))
         campo_rotulado(ge, 9, "Município e UF", linha_mun, col=1, columnspan=1)
         campo_rotulado(ge, 12, "Código IBGE do município", Campo(ge, self.v_end_ibge, largura=12), col=0, columnspan=1,
-                       dica="Necessário para a nota (campo cMun). Busque em ibge.gov.br/explica/codigos-dos-municipios.")
+                       dica="Necessário para a nota (campo cMun). Preenchido sozinho ao escolher o município acima.")
 
         ui.secao(corpo, "Descrição para este tomador").pack(anchor="w", pady=(16, 6))
         cartao2 = Cartao(corpo)
@@ -460,6 +480,13 @@ class DialogoTomador(Modal):
     def _atualizar_info(self):
         self.caixa_info.texto.configure(state="normal" if self.v_info_modo.get() != "herdar" else "disabled")
 
+    def _ao_escolher_municipio_tomador(self, escolhido):
+        reg = do.municipio_por_texto_formatado(escolhido)
+        if reg:
+            self.v_end_municipio.set(reg["municipio"])
+            self.v_end_uf.set(reg["uf"])
+            self.v_end_ibge.set(reg["codigo_ibge"])
+
     def _salvar(self):
         nome = self.v_nome.get().strip()
         doc = self.v_doc.get().strip()
@@ -487,6 +514,54 @@ class DialogoTomador(Modal):
             "informacoes_complementares": {"modo": self.v_info_modo.get(), "texto": self.caixa_info.texto.get("1.0", "end-1c")},
         })
         self.resultado = self.tomador
+        self.destroy()
+
+
+class DialogoPreviaImportacaoTomadores(Modal):
+    """Prévia antes de gravar: mostra quem vai entrar e os avisos/erros linha a linha, sem tocar
+    na configuração até o usuário confirmar."""
+
+    def __init__(self, pai, tomadores: list, erros: list, ao_confirmar):
+        super().__init__(pai, "Prévia da importação", largura=560, altura=600)
+        self.resizable(True, True)
+        self.minsize(px(480), px(420))
+        self.tomadores = tomadores
+        self.ao_confirmar = ao_confirmar
+        self._montar(erros)
+        self.bind("<Escape>", lambda *_: self.destroy())
+        self.mostrar()
+
+    def _montar(self, erros):
+        qtd = len(self.tomadores)
+        ui.titulo(self, "Prévia da importação",
+                  f"{qtd} tomador(es) pronto(s) pra importar." if qtd else "Nenhum tomador pronto pra importar."
+                  ).pack(anchor="w", pady=(0, 12))
+        rol = Rolavel(self)
+        rol.pack(fill="both", expand=True)
+        corpo = rol.corpo
+        if erros:
+            ui.secao(corpo, f"Avisos ({len(erros)})").pack(anchor="w", pady=(0, 6))
+            cartao = Cartao(corpo, pad=12)
+            cartao.pack(fill="x", pady=(0, 12))
+            for e in erros:
+                rotulo(cartao.corpo, f"• {e}", 9, cor="aviso_texto", largura=px(500)).pack(anchor="w", pady=(0, 4))
+        if self.tomadores:
+            ui.secao(corpo, "Tomadores a importar").pack(anchor="w", pady=(0, 6))
+            for t in self.tomadores:
+                c = Cartao(corpo, pad=10)
+                c.pack(fill="x", pady=(0, 6))
+                rotulo(c.corpo, t["nome"], 10, "bold", "verde_escuro").pack(anchor="w")
+                ref = t["documento"] or es.endereco_completo(t) or "—"
+                rotulo(c.corpo, ref, 9, cor="suave", largura=px(480)).pack(anchor="w")
+        lin = tk.Frame(self, bg=P.fundo)
+        lin.pack(fill="x", pady=(8, 0))
+        Botao(lin, "Cancelar", self.destroy).pack(side="right")
+        if self.tomadores:
+            Botao(lin, f"Importar {len(self.tomadores)} tomador(es)", self._confirmar, estilo="primario").pack(
+                side="right", padx=(0, 8))
+
+    def _confirmar(self):
+        self.ao_confirmar(self.tomadores)
         self.destroy()
 
 
@@ -556,7 +631,7 @@ class DialogoConfiguracaoEmissao(Modal):
         rotulo(g, "Regime tributário", 9, "bold", "suave").grid(row=0, column=0, sticky="w", pady=(0, 3), columnspan=2)
         ttk.Combobox(g, textvariable=self.v_regime, values=list(es.REGIMES.values()), state="readonly", width=26, font=F(10)).grid(
             row=1, column=0, sticky="w", columnspan=2, pady=(0, 10))
-        campo_rotulado(g, 2, "Inscrição Municipal (IM)", Campo(g, self.v_im, largura=22), col=0, columnspan=1)
+        campo_rotulado(g, 2, "Inscrição Municipal (IM) — opcional", Campo(g, self.v_im, largura=22), col=0, columnspan=1)
         campo_rotulado(g, 2, "Município e UF do prestador", self._linha_municipio(g), col=1, columnspan=1)
         self.f_simples = tk.Frame(g, bg=P.superficie)
         self.f_simples.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
@@ -582,7 +657,7 @@ class DialogoConfiguracaoEmissao(Modal):
         campo_rotulado(ge, 6, "Complemento", Campo(ge, self.v_end_complemento, largura=40))
         campo_rotulado(ge, 9, "Bairro", Campo(ge, self.v_end_bairro, largura=22), col=0, columnspan=1)
         campo_rotulado(ge, 9, "Código IBGE do município", Campo(ge, self.v_cod_ibge, largura=12), col=1, columnspan=1,
-                       dica="Necessário pra nota (campo cMun). Busque em ibge.gov.br/explica/codigos-dos-municipios.")
+                       dica="Necessário pra nota (campo cMun). Preenchido sozinho ao escolher o município acima.")
 
         self.v_regime.trace_add("write", lambda *_: self._atualizar_regime())
         self._atualizar_regime()
@@ -590,9 +665,17 @@ class DialogoConfiguracaoEmissao(Modal):
 
     def _linha_municipio(self, g):
         linha = tk.Frame(g, bg=P.superficie)
-        Campo(linha, self.v_municipio, largura=18).pack(side="left")
+        campo_busca(linha, self.v_municipio, do.buscar_municipio, largura=22,
+                    ao_escolher=self._ao_escolher_municipio_empresa).pack(side="left")
         Campo(linha, self.v_uf, largura=4).pack(side="left", padx=(6, 0))
         return linha
+
+    def _ao_escolher_municipio_empresa(self, escolhido):
+        reg = do.municipio_por_texto_formatado(escolhido)
+        if reg:
+            self.v_municipio.set(reg["municipio"])
+            self.v_uf.set(reg["uf"])
+            self.v_cod_ibge.set(reg["codigo_ibge"])
 
     def _atualizar_regime(self):
         chave = {v: k for k, v in es.REGIMES.items()}.get(self.v_regime.get(), "simples")
@@ -610,8 +693,8 @@ class DialogoConfiguracaoEmissao(Modal):
         cab = tk.Frame(f, bg=P.fundo)
         cab.pack(fill="x", pady=(0, 10))
         rotulo(cab, "Cada perfil tem seu próprio CTN, NBS, tributação e descrição. Empresas com um único tipo de serviço "
-                    "precisam de só um perfil.", 10, cor="suave", largura=px(620)).pack(side="left", anchor="w")
-        Botao(cab, "+  Novo perfil", self._novo_perfil, estilo="primario").pack(side="right", anchor="n")
+                    "precisam de só um perfil.", 10, cor="suave", largura=px(620)).pack(anchor="w")
+        Botao(cab, "+  Novo perfil", self._novo_perfil, estilo="primario").pack(anchor="w", pady=(8, 0))
         self.rol_perfis = Rolavel(f)
         self.rol_perfis.pack(fill="both", expand=True)
         self._lista_perfis()
@@ -636,10 +719,12 @@ class DialogoConfiguracaoEmissao(Modal):
                 Chip(topo, "Padrão", "verde").pack(side="left", padx=(8, 0))
             if not p["ativo"]:
                 Chip(topo, "Inativo", "neutro").pack(side="left", padx=(8, 0))
-            rotulo(k, f"CTN {p['ctn'] or '—'} · NBS {p['nbs'] or '—'}", 9, cor="suave").grid(row=1, column=0, sticky="w", pady=(2, 8))
+            rotulo(k, f"CTN {p['ctn'] or '—'} · NBS {p['nbs'] or '—'}", 9, cor="suave", largura=px(620)).grid(
+                row=1, column=0, sticky="w", pady=(2, 8))
             bt = tk.Frame(k, bg=P.superficie)
             bt.grid(row=2, column=0, sticky="w")
             Botao(bt, "Editar", lambda pid=p["id"]: self._editar_perfil(pid), pady=6).pack(side="left")
+            Botao(bt, "Duplicar", lambda pid=p["id"]: self._duplicar_perfil(pid), pady=6).pack(side="left", padx=(8, 0))
             if p["id"] != self.cfg.get("perfil_padrao_id"):
                 Botao(bt, "Tornar padrão", lambda pid=p["id"]: self._tornar_padrao(pid), pady=6).pack(side="left", padx=(8, 0))
             Botao(bt, "Excluir", lambda pid=p["id"]: self._excluir_perfil(pid), estilo="perigo", pady=6).pack(side="left", padx=(8, 0))
@@ -664,6 +749,20 @@ class DialogoConfiguracaoEmissao(Modal):
         self.grab_set()
         if d.resultado:
             self.cfg["perfis"] = [d.resultado if p["id"] == perfil_id else p for p in self.cfg["perfis"]]
+            self._lista_perfis()
+
+    def _duplicar_perfil(self, perfil_id):
+        """Copia um perfil existente (novo id, sem ser o padrão) e já abre a cópia pra editar
+        só o que muda — evita recriar tudo do zero por uma diferença pequena."""
+        atual = es.perfil_por_id(self.cfg, perfil_id)
+        if not atual:
+            return
+        copia = {**atual, "id": es.perfil_padrao()["id"], "nome": f"{atual['nome']} (cópia)"}
+        d = DialogoPerfilServico(self, copia, self._regime_chave())
+        self.wait_window(d)
+        self.grab_set()
+        if d.resultado:
+            self.cfg["perfis"].append(d.resultado)
             self._lista_perfis()
 
     def _tornar_padrao(self, perfil_id):
@@ -696,8 +795,12 @@ class DialogoConfiguracaoEmissao(Modal):
         cab = tk.Frame(f, bg=P.fundo)
         cab.pack(fill="x", pady=(0, 10))
         rotulo(cab, "Quando uma nota bater com o documento, nome ou endereço de um tomador cadastrado, o perfil dele "
-                    "é usado sem perguntar.", 10, cor="suave", largura=px(620)).pack(side="left", anchor="w")
-        Botao(cab, "+  Novo tomador", self._novo_tomador, estilo="primario").pack(side="right", anchor="n")
+                    "é usado sem perguntar.", 10, cor="suave", largura=px(620)).pack(anchor="w")
+        linha_bt = tk.Frame(cab, bg=P.fundo)
+        linha_bt.pack(anchor="w", pady=(8, 0))
+        Botao(linha_bt, "+  Novo tomador", self._novo_tomador, estilo="primario").pack(side="left")
+        Botao(linha_bt, "Importar planilha", self._importar_tomadores).pack(side="left", padx=(8, 0))
+        Botao(linha_bt, "Baixar modelo", self._baixar_modelo_tomadores).pack(side="left", padx=(8, 0))
         self.rol_tomadores = Rolavel(f)
         self.rol_tomadores.pack(fill="both", expand=True)
         self._lista_tomadores()
@@ -725,7 +828,7 @@ class DialogoConfiguracaoEmissao(Modal):
             perfil_nome = nomes_perfis.get(t.get("perfil_id"), "perfil padrão da empresa")
             identificacao = es.modo_identificacao_efetivo(self.cfg, t)
             referencia = es.endereco_completo(t) if identificacao == "endereco" else t["documento"]
-            rotulo(k, f"{referencia or '—'} · perfil: {perfil_nome}", 9, cor="suave").grid(
+            rotulo(k, f"{referencia or '—'} · perfil: {perfil_nome}", 9, cor="suave", largura=px(620)).grid(
                 row=1, column=0, sticky="w", pady=(2, 8))
             bt = tk.Frame(k, bg=P.superficie)
             bt.grid(row=2, column=0, sticky="w")
@@ -755,11 +858,40 @@ class DialogoConfiguracaoEmissao(Modal):
         self.cfg["tomadores"] = [t for t in self.cfg["tomadores"] if t["id"] != tomador_id]
         self._lista_tomadores()
 
+    def _baixar_modelo_tomadores(self):
+        caminho = filedialog.asksaveasfilename(parent=self, defaultextension=".xlsx",
+                                                initialfile="Modelo de tomadores.xlsx",
+                                                filetypes=[("Planilha Excel", "*.xlsx")])
+        if not caminho:
+            return
+        tpl.gerar_modelo_xlsx(caminho, perfis=self.cfg["perfis"])
+        ui.informar(self, "Modelo salvo", f"Modelo salvo em:\n{caminho}")
+        ui.abrir_pasta(Path(caminho).parent)
+
+    def _importar_tomadores(self):
+        caminho = filedialog.askopenfilename(parent=self, filetypes=[("Planilha Excel", "*.xlsx")])
+        if not caminho:
+            return
+        try:
+            novos, erros = tpl.importar_xlsx(caminho, self.cfg["perfis"],
+                                              self.cfg.get("identificacao_tomador_padrao", "documento"))
+        except ErroAdge as e:
+            ui.erro(self, "Não consegui importar", str(e))
+            return
+        if not novos and not erros:
+            ui.avisar(self, "Nada para importar", "Não encontrei nenhuma linha de dados nessa planilha.")
+            return
+        DialogoPreviaImportacaoTomadores(self, novos, erros, self._confirmar_importacao_tomadores)
+
+    def _confirmar_importacao_tomadores(self, novos):
+        self.cfg["tomadores"].extend(novos)
+        self._lista_tomadores()
+
     # ------------------------------------------------------------------ salvar
     def _salvar(self):
         im, municipio = self.v_im.get().strip(), self.v_municipio.get().strip()
-        if not im or not municipio:
-            self.l_erro.config(text="Informe a Inscrição Municipal e o município do prestador.")
+        if not municipio:
+            self.l_erro.config(text="Informe o município do prestador.")
             self.v_aba.set("empresa")
             self._trocar_aba()
             return

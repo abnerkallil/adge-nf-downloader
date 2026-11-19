@@ -61,3 +61,7 @@ Os testes (`tests/test_docs.py`) conferem o formato, os códigos e se existe rel
 | ITEM-41 | Certificado da NF-e na busca (empresa ou responsável) |
 | ITEM-42 | Configuração de emissão de NFS-e por empresa |
 | ITEM-43 | Emissão de notas (lançamento, prévia, assinatura e envio) |
+| ITEM-44 | Busca sem pontuação e município com código IBGE automático |
+| ITEM-45 | Duplicar perfil de serviço |
+| ITEM-46 | Importação de tomadores em lote por planilha |
+| ITEM-47 | Visual do programa pelo BrandBook da Adge |

@@ -15,6 +15,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 - **Relatórios por regime e destinos automáticos** (v1.7.9): os dados fiscais exibem apenas campos do regime selecionado e os XMLs usam a pasta Notas Fiscais salva por empresa, com ano e mês criados somente quando necessários.
 - **Correção do gráfico** (v1.7.10): as fatias do gráfico passam a ser desenhadas sem sobreposição, mantendo a diferenciação entre todos os participantes.
 - **Emissão de NFS-e** (v2.0.0): configuração de emissão por empresa (regime, perfis de serviço, tomadores recorrentes), lançamento de notas (manual, planilha ou documento do cliente), prévia com casamento automático de tomador, e montagem, assinatura e envio da DPS ao Sefin Nacional. Transmissão em produção real fica travada por padrão até ser testada e liberada.
+- **Correções e novidades da emissão** (v2.0.1): Inscrição Municipal opcional, CST sugerido no PIS/COFINS Cumulativo, busca de CTN/NBS sem pontuação, município com código IBGE automático, perfil de serviço duplicável, importação de tomadores em lote por planilha, e visual do programa pelo BrandBook da Adge.
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.

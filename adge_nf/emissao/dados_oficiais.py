@@ -37,6 +37,12 @@ def _normalizar_busca(texto: str) -> str:
     return "".join(c for c in sem_acento if not unicodedata.combining(c)).lower()
 
 
+def _normalizar_codigo(texto: str) -> str:
+    """Só letras e números, pra buscar "990101" e achar "99.01.01" (ou "110021000" e achar
+    "1.1002.10.00") — a pontuação do código não importa pra quem está digitando."""
+    return re.sub(r"[^0-9a-z]", "", _normalizar_busca(texto))
+
+
 @lru_cache(maxsize=1)
 def _ctn_lista() -> list[dict]:
     with open(_PASTA_DADOS / "ctn_lista.json", encoding="utf-8") as f:
@@ -74,13 +80,16 @@ def listar_ctn() -> list[str]:
 
 
 def buscar_ctn(texto: str, limite: int = 30) -> list[str]:
-    """Filtra CTN por código ou por palavra na descrição (busca tipo o portal, sem acento)."""
+    """Filtra CTN por código (com ou sem pontuação: "990101" acha "99.01.01") ou por palavra na
+    descrição (busca tipo o portal, sem acento)."""
     alvo = _normalizar_busca(texto)
+    alvo_codigo = _normalizar_codigo(texto)
     if not alvo:
         return listar_ctn()[:limite]
     achados = [
         formatar_ctn(r) for r in _ctn_lista()
-        if alvo in _normalizar_busca(r["codigo"]) or alvo in _normalizar_busca(r["descricao"])
+        if alvo in _normalizar_busca(r["descricao"])
+        or (alvo_codigo and alvo_codigo in _normalizar_codigo(r["codigo"]))
     ]
     return achados[:limite]
 
@@ -104,12 +113,55 @@ def formatar_nbs(registro: dict) -> str:
 
 
 def buscar_nbs(texto: str, limite: int = 30) -> list[str]:
-    """Sugestões de NBS (lista do Anexo VIII, não é a tabela oficial completa de NBS)."""
+    """Sugestões de NBS (lista do Anexo VIII, não é a tabela oficial completa de NBS). Código
+    aceito com ou sem pontuação: "110021000" acha "1.1002.10.00"."""
     alvo = _normalizar_busca(texto)
+    alvo_codigo = _normalizar_codigo(texto)
     base = _nbs_sugestoes()
     if alvo:
-        base = [r for r in base if alvo in _normalizar_busca(r["nbs"]) or alvo in _normalizar_busca(r["descricao"])]
+        base = [r for r in base if alvo in _normalizar_busca(r["descricao"])
+                or (alvo_codigo and alvo_codigo in _normalizar_codigo(r["nbs"]))]
     return [formatar_nbs(r) for r in base[:limite]]
+
+
+@lru_cache(maxsize=1)
+def _municipios() -> list[dict]:
+    """Tabela oficial dos 5.571 municípios do IBGE (nome, UF e código de 7 dígitos), baixada da
+    API `servicodados.ibge.gov.br/api/v1/localidades/municipios` em 19/11/2026 — embutida porque
+    o código IBGE do município é obrigatório na DPS (`prest/end/cMun`, `toma/end/cMun`) e não dá
+    pra pedir pro usuário decorar ou procurar fora do app."""
+    with open(_PASTA_DADOS / "municipios_ibge.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def formatar_municipio(registro: dict) -> str:
+    return f"{registro['municipio']} - {registro['uf']}"
+
+
+def buscar_municipio(texto: str, limite: int = 30) -> list[str]:
+    """Município por nome (sem acento/pontuação) ou pelo próprio código IBGE de 7 dígitos.
+    Texto vazio não devolve a lista inteira (5.571 municípios não cabem num combo) — só depois
+    de digitar algo."""
+    alvo = _normalizar_busca(texto)
+    if not alvo:
+        return []
+    alvo_codigo = _normalizar_codigo(texto)
+    achados = [
+        formatar_municipio(r) for r in _municipios()
+        if alvo in _normalizar_busca(f"{r['municipio']} {r['uf']}")
+        or (len(alvo_codigo) >= 4 and alvo_codigo in r["codigo_ibge"])
+    ]
+    return achados[:limite]
+
+
+def municipio_por_texto_formatado(texto_formatado: str) -> dict | None:
+    """Acha o registro (município, UF, código IBGE) a partir do texto "Município - UF" que
+    o combo de busca devolve. None se não bater com nenhum (texto digitado à mão, por exemplo)."""
+    alvo = _normalizar_busca(texto_formatado or "")
+    for r in _municipios():
+        if _normalizar_busca(formatar_municipio(r)) == alvo:
+            return r
+    return None
 
 
 def alerta_ctn_regime(texto_ou_codigo_ctn: str, regime: str) -> str:

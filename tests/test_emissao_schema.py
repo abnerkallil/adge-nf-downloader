@@ -24,6 +24,13 @@ class ConfiguracaoPadrao(unittest.TestCase):
         cfg["perfis"][0].update({"ctn": "0107", "nbs": "110021000"})
         self.assertTrue(es.configuracao_completa(cfg))
 
+    def test_completa_sem_im_pois_e_opcional(self):
+        cfg = es.configuracao_padrao()
+        cfg["regime"], cfg["municipio"] = "simples", "Londrina"
+        cfg["endereco"]["logradouro"] = "Rua Teste"
+        cfg["perfis"][0].update({"ctn": "0107", "nbs": "110021000"})
+        self.assertTrue(es.configuracao_completa(cfg))
+
     def test_sem_endereco_do_prestador_nao_esta_completa(self):
         cfg = es.configuracao_padrao()
         cfg["regime"], cfg["inscricao_municipal"], cfg["municipio"] = "simples", "12345", "Londrina"

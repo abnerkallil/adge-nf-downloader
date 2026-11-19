@@ -169,6 +169,9 @@ class App(tk.Tk):
             tk.Label(marca, image=self._marca_logo, bg=P.lateral, bd=0, highlightthickness=0).pack(anchor="w")
         else:
             rotulo(marca, "ADGE", 20, "bold", "lateral_texto").pack(anchor="w")
+        if self._marca_simbolo:
+            tk.Label(marca, image=self._marca_simbolo, bg=P.lateral, bd=0, highlightthickness=0).pack(
+                anchor="w", pady=(px(8), 0))
         rotulo(marca, "NF Downloader", 10, cor="lateral_suave").pack(anchor="w", pady=(4, 0))
         self.nav = {}
         for chave, nome in PAGINAS:
@@ -182,7 +185,7 @@ class App(tk.Tk):
         site = rotulo(rodape, SITE_ADGE.replace("https://", "").rstrip("/"), 9, cor="lateral_suave", cursor="hand2")
         site.pack(anchor="w", pady=(10, 0))
         site.bind("<Button-1>", lambda *_: ui.abrir_link(SITE_ADGE))
-        rotulo(rodape, f"Versão {VERSAO}", 9, cor="lateral_suave").pack(anchor="w")
+        rotulo(rodape, f"Versão {VERSAO}", 9, cor="lateral_rodape").pack(anchor="w")
 
     def _ir(self, nome):
         self.pagina = nome

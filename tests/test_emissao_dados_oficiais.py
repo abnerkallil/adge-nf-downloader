@@ -34,6 +34,10 @@ class CtnLista(unittest.TestCase):
     def test_busca_vazia_devolve_lista_cheia_limitada(self):
         self.assertEqual(len(do.buscar_ctn("", limite=5)), 5)
 
+    def test_busca_sem_pontuacao_acha_codigo_com_pontuacao(self):
+        achados = do.buscar_ctn("990101")
+        self.assertTrue(any(a.startswith("99.01.01") for a in achados))
+
 
 class NbsSugestoes(unittest.TestCase):
     def test_busca_por_palavra_sem_acento(self):
@@ -42,6 +46,32 @@ class NbsSugestoes(unittest.TestCase):
 
     def test_busca_sem_match_devolve_vazio(self):
         self.assertEqual(do.buscar_nbs("isso não existe de jeito nenhum 12345"), [])
+
+    def test_busca_sem_pontuacao_acha_codigo_com_pontuacao(self):
+        achados = do.buscar_nbs("110021000")
+        self.assertTrue(any(a.startswith("1.1002.10.00") for a in achados))
+
+
+class MunicipiosIbge(unittest.TestCase):
+    def test_busca_vazia_nao_devolve_a_lista_inteira(self):
+        self.assertEqual(do.buscar_municipio(""), [])
+
+    def test_busca_por_nome_sem_acento(self):
+        achados = do.buscar_municipio("londrina")
+        self.assertTrue(any(a.startswith("Londrina - PR") for a in achados))
+
+    def test_busca_pelo_codigo_ibge(self):
+        achados = do.buscar_municipio("4113700")
+        self.assertTrue(any(a.startswith("Londrina - PR") for a in achados))
+
+    def test_resolve_texto_formatado_para_o_registro(self):
+        reg = do.municipio_por_texto_formatado("Londrina - PR")
+        self.assertIsNotNone(reg)
+        self.assertEqual(reg["codigo_ibge"], "4113700")
+        self.assertEqual(reg["uf"], "PR")
+
+    def test_texto_nao_encontrado_devolve_none(self):
+        self.assertIsNone(do.municipio_por_texto_formatado("Isso não é um município - XX"))
 
 
 class AlertaRegime(unittest.TestCase):

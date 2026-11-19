@@ -6,8 +6,10 @@ da NFS-e Nacional nem monta a DPS (isso é do motor de emissão).
 
 Campos e enums batidos com o leiaute oficial da DPS em produção (anexo_i-sefin_adn-dps_nfse-snnfse-v1-01-20260209.xlsx,
 lido pela thread de pesquisa, não de memória): `TRIB_ISSQN` (`tribMun/tribISSQN`), `TP_RET_ISSQN` (`tribMun/tpRetISSQN`)
-e `TP_RET_PISCOFINS` (`tribFed/piscofins/tpRetPisCofins`, só as opções 0-6 confirmadas até agora). `cst_pis`/`cst_cofins`
-ainda ficam texto livre: a tabela oficial do CST continua incompleta no levantamento (só 00-03 nomeados).
+e `TP_RET_PISCOFINS` (`tribFed/piscofins/tpRetPisCofins`, 0-9 — confirmado pela thread do motor de emissão direto no
+XSD oficial, `TSTipoRetPISCofins` em `tiposSimples_v1.01.xsd`). `cst_pis`/`cst_cofins` ainda ficam texto livre: o CST
+não é uma faixa contínua (é uma lista fechada de 34 valores confirmada no XSD, `TSTipoCST`) — vira combobox quando
+tivermos as descrições de cada código.
 
 Reservado para quando sair de homologação: `perfil["ibscbs_futuro"]` (ex.: tpAjusteBCLocImoveis, cClassTrib) —
 hoje fica sempre `{}`, sem tela própria ainda.
@@ -33,12 +35,15 @@ TP_RET_ISSQN = {
 
 TP_RET_PISCOFINS = {
     0: "PIS/COFINS/CSLL não retidos",
-    1: "PIS/COFINS retido",
-    2: "PIS/COFINS não retido",
+    1: "PIS/COFINS retidos",
+    2: "PIS/COFINS não retidos",
     3: "PIS/COFINS/CSLL retidos",
     4: "PIS/COFINS retidos, CSLL não retido",
     5: "PIS retido, COFINS/CSLL não retido",
     6: "COFINS retido, PIS/CSLL não retido",
+    7: "PIS não retido, COFINS/CSLL retidos",
+    8: "PIS/COFINS não retidos, CSLL retido",
+    9: "COFINS não retido, PIS/CSLL retidos",
 }
 
 REGIMES = {
@@ -47,6 +52,13 @@ REGIMES = {
     "presumido": "Lucro Presumido",
     "real": "Lucro Real",
 }
+
+CST_PISCOFINS_VALIDOS = frozenset((
+    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "49", "50", "51", "52", "53", "54", "55", "56",
+    "60", "61", "62", "63", "64", "65", "66", "67", "70", "71", "72", "73", "74", "75", "98", "99",
+))
+"""Lista fechada de 34 códigos de CST do PIS/COFINS, confirmada pela thread do motor de emissão
+direto no XSD oficial (`TSTipoCST`, `tiposSimples_v1.01.xsd`) — não é uma faixa contínua 00-99."""
 
 PIS_COFINS_REGIMES = {
     "cumulativo": "Cumulativo",
@@ -211,7 +223,9 @@ def perfil_completo(perfil: dict) -> bool:
 
 def configuracao_completa(cfg: dict) -> bool:
     """Já tem o mínimo para tentar uma emissão: regime, IM, município, endereço do prestador
-    (obrigatório no leiaute — grupo `prest/end`) e pelo menos um perfil ativo e completo."""
+    e pelo menos um perfil ativo e completo. O grupo `prest/end` é opcional no XSD oficial
+    (`minOccurs="0"`, confirmado pela thread do motor de emissão) — exigir o endereço aqui é
+    uma decisão própria do ADGE (a nota fica mais completa), não uma obrigação do leiaute."""
     if not cfg or cfg.get("regime") not in REGIMES:
         return False
     if not (cfg.get("inscricao_municipal") and cfg.get("municipio")):

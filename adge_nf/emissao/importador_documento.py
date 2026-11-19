@@ -14,7 +14,8 @@ import re
 from ..core import ErroAdge
 from .lancamento import Lancamento
 
-CAMPOS = ("nome", "documento", "nome_documento", "endereco", "valor", "competencia", "data", "observacoes", "ignorar")
+CAMPOS = ("nome", "documento", "nome_documento", "endereco", "valor", "competencia", "data",
+          "perfil_nome", "observacoes", "ignorar")
 
 _PALAVRAS_CHAVE = {
     "nome_documento": ("inquilino", "cliente/inquilino"),
@@ -24,6 +25,7 @@ _PALAVRAS_CHAVE = {
     "valor": ("valor recebido", "valor pago", "valor", "total"),
     "competencia": ("competência", "competencia", "mês", "mes"),
     "data": ("data",),
+    "perfil_nome": ("perfil de serviço", "perfil de servico", "perfil"),
     "observacoes": ("dúvidas", "duvidas", "observaç", "obs"),
 }
 
@@ -123,7 +125,7 @@ def construir_lancamentos(cabecalho: list, linhas: list, mapeamento: dict, compe
     lancamentos, erros = [], []
     for n, linha in enumerate(linhas, start=2):  # 2: linha 1 é o cabeçalho
         valores = {"nome": "", "documento": "", "endereco": "", "valor": "", "competencia": competencia_padrao,
-                   "data": "", "observacoes": ""}
+                   "data": "", "perfil_nome": "", "observacoes": ""}
         for i, campo in mapeamento.items():
             if campo in (None, "ignorar") or i >= len(linha):
                 continue
@@ -153,6 +155,7 @@ def construir_lancamentos(cabecalho: list, linhas: list, mapeamento: dict, compe
                 valor=valor_numerico(valores["valor"]),
                 competencia=valores["competencia"] or competencia_padrao,
                 data_prestacao=valores["data"],
+                perfil_nome=valores["perfil_nome"],
                 observacoes=valores["observacoes"],
                 origem="documento",
                 linha_origem=n,

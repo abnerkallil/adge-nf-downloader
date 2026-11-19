@@ -24,6 +24,8 @@ class Lancamento:
     data_prestacao: str = ""              # "AAAA-MM-DD"; vazio -> usa o último dia da competência
     endereco: str = ""                    # usado no casamento de tomador e, se o perfil pedir, na descrição
     observacoes: str = ""                 # texto livre vindo da origem (ex.: "Não conseguiu pagar")
+    perfil_nome: str = ""                 # override explícito (ex.: coluna da planilha); vazio = casar tomador/perguntar
+    retencao_pis_cofins_csll: bool | None = None  # None = ainda não perguntado; batch pergunta 1x p/ o lote, manual pergunta por nota
     origem: str = "manual"
     linha_origem: int = 0                 # linha na planilha/documento, para apontar erros; 0 = manual
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])

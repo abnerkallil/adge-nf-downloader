@@ -11,9 +11,9 @@ from ..core import ErroAdge
 from .lancamento import Lancamento
 
 COLUNAS = ["Tomador (nome)", "Documento (CPF ou CNPJ)", "Endereço", "Valor", "Competência (AAAA-MM)",
-           "Data da prestação (AAAA-MM-DD, opcional)", "Observações"]
+           "Data da prestação (AAAA-MM-DD, opcional)", "Perfil de serviço (nome, opcional)", "Observações"]
 
-LINHA_EXEMPLO = ["Fulano de Tal", "123.456.789-01", "Rua Exemplo, 100", 1250.00, "2026-11", "", ""]
+LINHA_EXEMPLO = ["Fulano de Tal", "123.456.789-01", "Rua Exemplo, 100", 1250.00, "2026-11", "", "", ""]
 
 
 def gerar_modelo_xlsx(caminho) -> Path:
@@ -106,6 +106,7 @@ def importar_xlsx(caminho) -> tuple:
         "valor": col("valor"),
         "competencia": col("competência (aaaa-mm)", "competencia", "competência"),
         "data": col("data da prestação (aaaa-mm-dd, opcional)", "data da prestação", "data"),
+        "perfil_nome": col("perfil de serviço (nome, opcional)", "perfil de serviço", "perfil de servico", "perfil"),
         "observacoes": col("observações", "observacoes", "dúvidas", "duvidas"),
     }
     if idx["nome"] is None or idx["valor"] is None:
@@ -132,6 +133,7 @@ def importar_xlsx(caminho) -> tuple:
                 valor=valor_numerico(celula(linha, "valor")),
                 competencia=_competencia_de(celula(linha, "competencia"), data_prestacao),
                 data_prestacao=data_prestacao,
+                perfil_nome=_texto(celula(linha, "perfil_nome")),
                 observacoes=_texto(celula(linha, "observacoes")),
                 origem="planilha",
                 linha_origem=n,

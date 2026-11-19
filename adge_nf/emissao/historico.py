@@ -38,3 +38,12 @@ def registrar(pasta_dados: Path, empresa_id: str, registro: dict) -> None:
 def ja_emitido(pasta_dados: Path, empresa_id: str, lancamento_id: str) -> bool:
     return any(r.get("lancamento_id") == lancamento_id and r.get("status") == "emitida"
               for r in listar(pasta_dados, empresa_id))
+
+
+def proximo_numero_dps(pasta_dados: Path, empresa_id: str, serie: str = "1") -> int:
+    """Próximo nDPS da série: maior número já usado (emitido ou pendente, para não colidir com
+    uma transmissão em andamento) + 1. Números nunca são reaproveitados, mesmo que uma nota
+    pendente seja depois abandonada — mais seguro do que arriscar duplicidade de nDPS."""
+    usados = [int(r["numero"]) for r in listar(pasta_dados, empresa_id)
+              if r.get("serie", "1") == serie and str(r.get("numero", "")).isdigit()]
+    return max(usados, default=0) + 1

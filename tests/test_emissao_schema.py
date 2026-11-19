@@ -17,15 +17,23 @@ class ConfiguracaoPadrao(unittest.TestCase):
     def test_nao_esta_completa_sem_dados(self):
         self.assertFalse(es.configuracao_completa(es.configuracao_padrao()))
 
-    def test_completa_com_regime_im_municipio_e_perfil(self):
+    def test_completa_com_regime_im_municipio_endereco_e_perfil(self):
+        cfg = es.configuracao_padrao()
+        cfg["regime"], cfg["inscricao_municipal"], cfg["municipio"] = "simples", "12345", "Londrina"
+        cfg["endereco"]["logradouro"] = "Rua Teste"
+        cfg["perfis"][0].update({"ctn": "0107", "nbs": "110021000"})
+        self.assertTrue(es.configuracao_completa(cfg))
+
+    def test_sem_endereco_do_prestador_nao_esta_completa(self):
         cfg = es.configuracao_padrao()
         cfg["regime"], cfg["inscricao_municipal"], cfg["municipio"] = "simples", "12345", "Londrina"
         cfg["perfis"][0].update({"ctn": "0107", "nbs": "110021000"})
-        self.assertTrue(es.configuracao_completa(cfg))
+        self.assertFalse(es.configuracao_completa(cfg))
 
     def test_perfil_inativo_nao_conta(self):
         cfg = es.configuracao_padrao()
         cfg["regime"], cfg["inscricao_municipal"], cfg["municipio"] = "simples", "12345", "Londrina"
+        cfg["endereco"]["logradouro"] = "Rua Teste"
         cfg["perfis"][0].update({"ctn": "0107", "nbs": "110021000", "ativo": False})
         self.assertFalse(es.configuracao_completa(cfg))
 
@@ -105,6 +113,15 @@ class Migracao(unittest.TestCase):
     def test_nao_perde_chave_desconhecida_de_versao_futura(self):
         cfg = es.migrar({"algo_novo_do_futuro": 42})
         self.assertEqual(cfg["algo_novo_do_futuro"], 42)
+
+    def test_preenche_endereco_do_prestador_que_falta(self):
+        cfg = es.migrar({"endereco": {"logradouro": "Rua X"}})
+        self.assertEqual(cfg["endereco"]["logradouro"], "Rua X")
+        self.assertEqual(cfg["endereco"]["cep"], "")
+
+    def test_endereco_do_tomador_ganha_codigo_municipio_ibge_que_faltava(self):
+        cfg = es.migrar({"tomadores": [{"id": "t1", "endereco": {"logradouro": "Rua X"}}]})
+        self.assertEqual(cfg["tomadores"][0]["endereco"]["codigo_municipio_ibge"], "")
 
 
 class Marcadores(unittest.TestCase):

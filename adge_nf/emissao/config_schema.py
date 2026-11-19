@@ -130,7 +130,15 @@ def perfil_padrao(nome: str = "") -> dict:
 
 
 def endereco_padrao() -> dict:
-    return {"cep": "", "logradouro": "", "numero": "", "complemento": "", "bairro": "", "municipio": "", "uf": ""}
+    return {"cep": "", "logradouro": "", "numero": "", "complemento": "", "bairro": "", "municipio": "", "uf": "",
+            "codigo_municipio_ibge": ""}
+
+
+def endereco_rua_padrao() -> dict:
+    """Só a parte de logradouro: usada no endereço do prestador (`cfg["endereco"]`), cujo
+    município/UF/código IBGE já ficam direto em `cfg["municipio"]`/`cfg["uf"]`/`cfg["codigo_municipio_ibge"]`
+    (não duplica)."""
+    return {"cep": "", "logradouro": "", "numero": "", "complemento": "", "bairro": ""}
 
 
 def tomador_padrao(nome: str = "") -> dict:
@@ -153,6 +161,7 @@ def configuracao_padrao() -> dict:
         "versao": VERSAO_ATUAL,
         "regime": "simples",
         "inscricao_municipal": "", "municipio": "", "uf": "", "codigo_municipio_ibge": "",
+        "endereco": endereco_rua_padrao(),
         "simples": {"aliquota_mes": 0.0},
         "identificacao_tomador_padrao": "documento",
         "perfis": [perfil],
@@ -187,6 +196,7 @@ def migrar(bruto: dict | None) -> dict:
             t["modo_identificacao"] = "herdar"
         if t.get("perfil_id") not in ids_perfis:
             t["perfil_id"] = None
+    cfg["endereco"] = {**endereco_rua_padrao(), **(cfg.get("endereco") or {})}
     cfg["simples"] = {**{"aliquota_mes": 0.0}, **(cfg.get("simples") or {})}
     if cfg.get("identificacao_tomador_padrao") not in MODOS_IDENTIFICACAO:
         cfg["identificacao_tomador_padrao"] = "documento"
@@ -200,10 +210,13 @@ def perfil_completo(perfil: dict) -> bool:
 
 
 def configuracao_completa(cfg: dict) -> bool:
-    """Já tem o mínimo para tentar uma emissão: regime, IM, município e pelo menos um perfil ativo e completo."""
+    """Já tem o mínimo para tentar uma emissão: regime, IM, município, endereço do prestador
+    (obrigatório no leiaute — grupo `prest/end`) e pelo menos um perfil ativo e completo."""
     if not cfg or cfg.get("regime") not in REGIMES:
         return False
     if not (cfg.get("inscricao_municipal") and cfg.get("municipio")):
+        return False
+    if not cfg.get("endereco", {}).get("logradouro"):
         return False
     ativos = [p for p in cfg.get("perfis", []) if p.get("ativo")]
     return any(perfil_completo(p) for p in ativos)

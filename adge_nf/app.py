@@ -295,8 +295,17 @@ class App(tk.Tk):
         Botao(bt, "Buscar notas", lambda i=e["id"]: self._buscar(i), estilo="primario", pady=7).pack(side="left")
         Botao(bt, "Editar", lambda i=e["id"]: self._editar(i), pady=7).pack(side="left", padx=(8, 0))
         Botao(bt, "Excluir", lambda i=e["id"]: self._excluir(i), estilo="perigo", pady=7).pack(side="left", padx=(8, 0))
+        # Emissão de notas (V2.0): "Configurar para Emissão de Notas" é da tela de configuração (DEV A);
+        # este abre o motor (lançar e conferir antes de transmitir).
+        bt2 = tk.Frame(k, bg=P.superficie)
+        bt2.pack(fill="x", pady=(8, 0))
+        Botao(bt2, "Emitir Notas", lambda i=e["id"]: self._emitir(i), pady=7).pack(side="left")
         self._ligar_cliques(c, e["id"])
         return c
+
+    def _emitir(self, id_):
+        from .emissao_ui import DialogoEmissao
+        self.wait_window(DialogoEmissao(self, self.store, self.store.obter(id_)))
 
     def _ligar_cliques(self, w, id_):
         if not isinstance(w, Botao):

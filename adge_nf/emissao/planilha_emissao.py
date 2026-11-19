@@ -61,7 +61,7 @@ def _data_de(celula) -> str:
     return _texto(celula)
 
 
-def _valor_de(celula) -> float:
+def valor_numerico(celula) -> float:
     if celula in (None, ""):
         return 0.0
     if isinstance(celula, (int, float)):
@@ -111,7 +111,7 @@ def importar_xlsx(caminho) -> tuple:
     if idx["nome"] is None or idx["valor"] is None:
         return [], ['A planilha precisa das colunas "Tomador (nome)" e "Valor".']
 
-    def valor_de(linha, campo):
+    def celula(linha, campo):
         i = idx[campo]
         return linha[i] if i is not None and i < len(linha) else None
 
@@ -119,20 +119,20 @@ def importar_xlsx(caminho) -> tuple:
     for n, linha in enumerate(linhas[1:], start=2):
         if all(v in (None, "") for v in linha):
             continue
-        nome = _texto(valor_de(linha, "nome"))
+        nome = _texto(celula(linha, "nome"))
         if not nome:
             erros.append(f"Linha {n}: sem nome do tomador, ignorada")
             continue
-        data_prestacao = _data_de(valor_de(linha, "data"))
+        data_prestacao = _data_de(celula(linha, "data"))
         try:
             lanc = Lancamento(
                 tomador_nome=nome,
-                tomador_documento=_texto(valor_de(linha, "documento")),
-                endereco=_texto(valor_de(linha, "endereco")),
-                valor=_valor_de(valor_de(linha, "valor")),
-                competencia=_competencia_de(valor_de(linha, "competencia"), data_prestacao),
+                tomador_documento=_texto(celula(linha, "documento")),
+                endereco=_texto(celula(linha, "endereco")),
+                valor=valor_numerico(celula(linha, "valor")),
+                competencia=_competencia_de(celula(linha, "competencia"), data_prestacao),
                 data_prestacao=data_prestacao,
-                observacoes=_texto(valor_de(linha, "observacoes")),
+                observacoes=_texto(celula(linha, "observacoes")),
                 origem="planilha",
                 linha_origem=n,
             )

@@ -144,13 +144,13 @@ def construir_lancamentos(cabecalho: list, linhas: list, mapeamento: dict, compe
         if not valores["nome"]:
             erros.append(f"Linha {n}: sem nome do tomador, ignorada")
             continue
-        from .planilha_emissao import _valor_de
+        from .planilha_emissao import valor_numerico
         try:
             lanc = Lancamento(
                 tomador_nome=valores["nome"],
                 tomador_documento=valores["documento"],
                 endereco=valores["endereco"],
-                valor=_valor_de(valores["valor"]),
+                valor=valor_numerico(valores["valor"]),
                 competencia=valores["competencia"] or competencia_padrao,
                 data_prestacao=valores["data"],
                 observacoes=valores["observacoes"],

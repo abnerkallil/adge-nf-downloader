@@ -10,14 +10,16 @@ https://www.gov.br/nfse/.../nfse-esquemas_xsd-v1-01-20260209.zip (`DPS_v1.01.xsd
 valida o XML gerado contra esse schema de verdade.
 
 Limitações conhecidas, deliberadas (não chutar dado que não temos):
-- `prest/end` e `toma/end` (endereço estruturado, com código IBGE do município) ficam de fora: o
-  cadastro da empresa não guarda CEP/logradouro do prestador, e o cadastro de tomador (PR #2) não
-  guarda o código IBGE do município (só o nome). Os dois grupos são opcionais no leiaute (`end`
-  minOccurs="0"), então a nota sai sem eles até esse campo existir no schema — avisado ao Dev A.
+- `prest/end` (opcional no leiaute, `end` minOccurs="0") só entra se `empresa_emissao["endereco"]`
+  tiver logradouro preenchido (campo do Dev A, `v2/config-emissao` commit 36caf9b).
+- `toma/end` (também opcional) só entra se o tomador casado tiver endereço estruturado completo
+  (logradouro + código IBGE do município) — tomador não casado ou cadastrado só com documento fica
+  sem esse grupo, o que é válido no leiaute.
+- `cLocPrestacao` usa o código IBGE do ENDEREÇO DO TOMADOR quando disponível (ex.: locação de imóvel,
+  onde o serviço ocorre no município do imóvel) e cai para o município do prestador quando não há
+  esse dado — mesma limitação de antes, mas só nos casos em que o tomador não tem o IBGE cadastrado.
 - `IBSCBS`, `obra`, `atvEvento`, `comExt`, `interm`, `subst`, `vDedRed` não são usados ainda (fora
   do escopo atual: emissão simples pelo prestador, sem IBS/CBS, obra, evento ou comércio exterior).
-- `cLocPrestacao` usa o município do PRESTADOR por padrão (mesma limitação do endereço do tomador
-  acima); ajustar quando o schema do tomador tiver o código IBGE.
 """
 from __future__ import annotations
 
@@ -95,10 +97,12 @@ def montar_campos(empresa: dict, empresa_emissao: dict, perfil: dict, tomador: d
             "inscricao_municipal": empresa_emissao.get("inscricao_municipal", ""),
             "codigo_municipio_ibge": empresa_emissao.get("codigo_municipio_ibge", ""),
             "regime": empresa_emissao.get("regime", ""),
+            "endereco": dict(empresa_emissao.get("endereco") or {}),
         },
         "tomador": {
             "nome": lancamento.tomador_nome, "documento": lancamento.tomador_documento,
             "tipo_documento": lancamento.tipo_documento,
+            "endereco": dict((tomador or {}).get("endereco") or {}),
         },
         "servico": {
             "ctn": _codigo(perfil["ctn"]), "nbs": _codigo(perfil["nbs"]),
@@ -130,6 +134,21 @@ def _sub(pai, tag, texto=None, **attrs):
     if texto is not None:
         el.text = str(texto)
     return el
+
+
+def _end_nacional(pai, endereco: dict, cod_mun_ibge: str):
+    """`TCEndereco`: `endNac` (cMun + CEP) seguido de xLgr/nro/xCpl?/xBairro — mesma estrutura do
+    XSD tanto pra `prest/end` quanto `toma/end`. Só chamar quando `logradouro` e `cod_mun_ibge`
+    estiverem preenchidos (o grupo inteiro é opcional; não dá pra mandar incompleto)."""
+    end = _sub(pai, "end")
+    end_nac = _sub(end, "endNac")
+    _sub(end_nac, "cMun", cod_mun_ibge)
+    _sub(end_nac, "CEP", _so_digitos(endereco.get("cep", "")))
+    _sub(end, "xLgr", endereco["logradouro"][:255])
+    _sub(end, "nro", (endereco.get("numero") or "S/N")[:10])
+    if endereco.get("complemento"):
+        _sub(end, "xCpl", endereco["complemento"][:60])
+    _sub(end, "xBairro", (endereco.get("bairro") or "Centro")[:60])
 
 
 def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str = TP_AMB_HOMOLOGACAO,
@@ -164,7 +183,9 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
         _sub(el_prest, "IM", prest["inscricao_municipal"])
     if prest.get("nome"):
         _sub(el_prest, "xNome", prest["nome"][:150])
-    # prest/end fica de fora: ver limitação no topo do módulo
+    end_prest = prest.get("endereco") or {}
+    if end_prest.get("logradouro"):
+        _end_nacional(el_prest, end_prest, cod_mun)
     reg_trib = _sub(el_prest, "regTrib")
     _sub(reg_trib, "opSimpNac", _OP_SIMP_NAC.get(prest["regime"], "1"))
     _sub(reg_trib, "regEspTrib", _REG_ESP_TRIB_NENHUM)
@@ -176,11 +197,16 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     elif toma["tipo_documento"] == "cnpj":
         _sub(el_toma, "CNPJ", toma["documento"])
     _sub(el_toma, "xNome", (toma["nome"] or "")[:150])
-    # toma/end fica de fora: ver limitação no topo do módulo
+    end_toma = toma.get("endereco") or {}
+    cod_mun_toma = _so_digitos(end_toma.get("codigo_municipio_ibge", ""))
+    if end_toma.get("logradouro") and cod_mun_toma:
+        _end_nacional(el_toma, end_toma, cod_mun_toma)
 
     serv = _sub(inf, "serv")
     loc_prest = _sub(serv, "locPrest")
-    _sub(loc_prest, "cLocPrestacao", cod_mun)  # assunção: município do prestador, ver limitação no topo
+    # Município do serviço: o do endereço do tomador quando tiver IBGE cadastrado (ex.: locação de
+    # imóvel, onde o serviço ocorre no município do imóvel), senão o do prestador (ver limitação no topo).
+    _sub(loc_prest, "cLocPrestacao", cod_mun_toma or cod_mun)
     c_serv = _sub(serv, "cServ")
     _sub(c_serv, "cTribNac", campos["servico"]["ctn"].zfill(6))
     _sub(c_serv, "xDescServ", (campos["descricao"] or "")[:2000] or "Serviço prestado")

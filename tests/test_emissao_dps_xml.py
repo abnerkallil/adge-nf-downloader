@@ -65,6 +65,24 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         valido, erros = validar(xml)
         self.assertTrue(valido, msg=str(erros))
 
+    def test_endereco_do_prestador_e_do_tomador_quando_preenchidos(self):
+        """`prest/end`/`toma/end` (ambos opcionais no XSD) entram quando os dados existem — gap
+        fechado pelo Dev A em v2/config-emissao (commit 36caf9b)."""
+        empresa_emissao_fm = empresa_emissao(
+            endereco={"cep": "86050000", "logradouro": "Av. Higienópolis", "numero": "100",
+                       "complemento": "Sala 2", "bairro": "Centro"})
+        tomador = {"endereco": {"cep": "86010000", "logradouro": "Rua das Flores", "numero": "50",
+                                 "bairro": "Centro", "codigo_municipio_ibge": "4113700"}}
+        lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
+                           valor=1250.0, competencia="2026-11", data_prestacao="2026-11-05")
+        campos = dps.montar_campos(EMPRESA, empresa_emissao_fm, perfil_locacao(), tomador, lanc)
+        xml = dps.montar_xml(campos, serie="1", numero=4)
+        valido, erros = validar(xml)
+        self.assertTrue(valido, msg=str(erros))
+        self.assertIn("<xLgr>Av. Higienópolis</xLgr>", xml)
+        self.assertIn("<xLgr>Rua das Flores</xLgr>", xml)
+        self.assertIn("<cLocPrestacao>4113700</cLocPrestacao>", xml)
+
     def test_simples_sem_totTrib_levanta_erro_claro(self):
         from adge_nf.core import ErroAdge
         empresa_emissao_simples = empresa_emissao(regime="simples")

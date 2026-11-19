@@ -268,10 +268,13 @@ def baixar_dfe(sessao, cnpj: str, nsu_inicial: int = 0, pausa: float = 0.5, log=
 
 
 def sessao_com_certificado(pfx: str, senha: str):
+    """Sessão com o certificado A1 montado em todo `https://` (não só no ADN de distribuição):
+    o motor de emissão (`emissao/transmissao.py`) fala com `sefin.nfse.gov.br`, host diferente,
+    com o mesmo certificado."""
     import requests
     from requests_pkcs12 import Pkcs12Adapter
     s = requests.Session()
-    s.mount("https://adn.nfse.gov.br", Pkcs12Adapter(pkcs12_filename=pfx, pkcs12_password=senha))
+    s.mount("https://", Pkcs12Adapter(pkcs12_filename=pfx, pkcs12_password=senha))
     return s
 
 

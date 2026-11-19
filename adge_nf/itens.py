@@ -48,6 +48,8 @@ CATALOGO = {
     "ITEM-39": "RBT12 pelas notas consultadas",
     "ITEM-40": "Responsável (CPF ou CNPJ e certificado)",
     "ITEM-41": "Certificado da NF-e na busca (empresa ou responsável)",
+    "ITEM-42": "Configuração de emissão de NFS-e por empresa",
+    "ITEM-43": "Emissão de notas (lançamento, prévia, assinatura e envio)",
 }
 
 PADRAO = re.compile(r"^ITEM-\d{2,3}$")

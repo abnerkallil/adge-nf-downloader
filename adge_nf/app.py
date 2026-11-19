@@ -17,6 +17,8 @@ from .nfe_cache import HistoricoNFe
 from .core import ErroAdge
 from .dialogos import (PREF_BOAS_VINDAS, TEXTOS_MISSAO, DialogoAtualizacao, DialogoBoasVindas, DialogoEmpresa,  # noqa: F401
                        boas_vindas_pendente)
+from .emissao import config_schema
+from .emissao.ui_configuracao import DialogoConfiguracaoEmissao
 from .store import Armazenamento
 from .ui import P, Botao, Cartao, Chip, Interruptor, Rolavel, F, px, rotulo
 
@@ -295,8 +297,23 @@ class App(tk.Tk):
         Botao(bt, "Buscar notas", lambda i=e["id"]: self._buscar(i), estilo="primario", pady=7).pack(side="left")
         Botao(bt, "Editar", lambda i=e["id"]: self._editar(i), pady=7).pack(side="left", padx=(8, 0))
         Botao(bt, "Excluir", lambda i=e["id"]: self._excluir(i), estilo="perigo", pady=7).pack(side="left", padx=(8, 0))
+        # Emissão de notas (V2.0): "Configurar para Emissão de Notas" é a tela de configuração fixa
+        # da empresa (Dev A); "Emitir Notas" abre o motor (lançar e conferir antes de transmitir).
+        be = tk.Frame(k, bg=P.superficie)
+        be.pack(fill="x", pady=(8, 0))
+        rotulo_emissao, tom_emissao = (("Emissão configurada", "verde") if config_schema.configuracao_completa(e.get("emissao"))
+                                        else ("Emissão: configuração pendente", "neutro"))
+        Botao(be, "Configurar para Emissão de Notas", lambda i=e["id"]: self._configurar_emissao(i), pady=7).pack(side="left")
+        Chip(be, rotulo_emissao, tom_emissao).pack(side="left", padx=(8, 0))
+        bt2 = tk.Frame(k, bg=P.superficie)
+        bt2.pack(fill="x", pady=(8, 0))
+        Botao(bt2, "Emitir Notas", lambda i=e["id"]: self._emitir(i), pady=7).pack(side="left")
         self._ligar_cliques(c, e["id"])
         return c
+
+    def _emitir(self, id_):
+        from .emissao_ui import DialogoEmissao
+        self.wait_window(DialogoEmissao(self, self.store, self.store.obter(id_)))
 
     def _ligar_cliques(self, w, id_):
         if not isinstance(w, Botao):
@@ -353,6 +370,14 @@ class App(tk.Tk):
             if d.salvou:
                 self.selecionada_id = d.emp["id"]
                 self._atualizar_lista(d.emp["id"])
+
+    def _configurar_emissao(self, id_=None):
+        e = self.store.obter(id_) if id_ else self._selecionada()
+        if e:
+            d = DialogoConfiguracaoEmissao(self, self.store, e)
+            self.wait_window(d)
+            if d.salvou:
+                self._atualizar_lista(e["id"])
 
     def _excluir(self, id_=None):
         e = self.store.obter(id_) if id_ else self._selecionada()

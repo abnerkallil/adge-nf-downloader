@@ -370,6 +370,7 @@ class DialogoTomador(Modal):
         self.v_bairro = tk.StringVar(value=e["bairro"])
         self.v_end_municipio = tk.StringVar(value=e["municipio"])
         self.v_end_uf = tk.StringVar(value=e["uf"])
+        self.v_end_ibge = tk.StringVar(value=e["codigo_municipio_ibge"])
         self.v_ativo = tk.BooleanVar(value=t["ativo"])
         nomes_perfis = ["(usar o perfil padrão da empresa)"] + [p["nome"] or "(sem nome)" for p in self.perfis]
         self._id_por_nome = {p["nome"] or "(sem nome)": p["id"] for p in self.perfis}
@@ -411,6 +412,8 @@ class DialogoTomador(Modal):
         Campo(linha_mun, self.v_end_municipio, largura=18).pack(side="left")
         Campo(linha_mun, self.v_end_uf, largura=4).pack(side="left", padx=(6, 0))
         campo_rotulado(ge, 9, "Município e UF", linha_mun, col=1, columnspan=1)
+        campo_rotulado(ge, 12, "Código IBGE do município", Campo(ge, self.v_end_ibge, largura=12), col=0, columnspan=1,
+                       dica="Necessário para a nota (campo cMun). Busque em ibge.gov.br/explica/codigos-dos-municipios.")
 
         ui.secao(corpo, "Descrição para este tomador").pack(anchor="w", pady=(16, 6))
         cartao2 = Cartao(corpo)
@@ -461,7 +464,7 @@ class DialogoTomador(Modal):
         endereco = {"cep": self.v_cep.get().strip(), "logradouro": self.v_logradouro.get().strip(),
                     "numero": self.v_numero.get().strip(), "complemento": self.v_complemento.get().strip(),
                     "bairro": self.v_bairro.get().strip(), "municipio": self.v_end_municipio.get().strip(),
-                    "uf": self.v_end_uf.get().strip().upper()}
+                    "uf": self.v_end_uf.get().strip().upper(), "codigo_municipio_ibge": self.v_end_ibge.get().strip()}
         tem_endereco = bool(endereco["logradouro"] and endereco["municipio"])
         if not nome:
             self.l_erro.config(text="Dê um nome para o tomador.")
@@ -530,6 +533,12 @@ class DialogoConfiguracaoEmissao(Modal):
         self.v_municipio = tk.StringVar(value=cfg["municipio"])
         self.v_uf = tk.StringVar(value=cfg["uf"])
         self.v_cod_ibge = tk.StringVar(value=cfg["codigo_municipio_ibge"])
+        end = cfg["endereco"]
+        self.v_end_cep = tk.StringVar(value=end["cep"])
+        self.v_end_logradouro = tk.StringVar(value=end["logradouro"])
+        self.v_end_numero = tk.StringVar(value=end["numero"])
+        self.v_end_complemento = tk.StringVar(value=end["complemento"])
+        self.v_end_bairro = tk.StringVar(value=end["bairro"])
         self.v_aliq_simples = tk.StringVar(value=f"{cfg['simples']['aliquota_mes']:.4f}".replace(".", ",") if cfg["simples"]["aliquota_mes"] else "")
         self.v_identificacao_padrao = tk.StringVar(
             value=es.MODOS_IDENTIFICACAO.get(cfg.get("identificacao_tomador_padrao", "documento"), es.MODOS_IDENTIFICACAO["documento"]))
@@ -555,6 +564,21 @@ class DialogoConfiguracaoEmissao(Modal):
                     state="readonly", width=56, font=F(10)).grid(row=8, column=0, columnspan=2, sticky="w")
         rotulo(g, "Vale para os tomadores cadastrados como \"usar o padrão da empresa\". Cada tomador pode sobrepor.",
               9, cor="suave", largura=px(600)).grid(row=9, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
+        ui.secao(corpo, "Endereço do prestador (obrigatório na nota)").pack(anchor="w", pady=(16, 6))
+        cartao_end = Cartao(corpo)
+        cartao_end.pack(fill="x")
+        ge = cartao_end.corpo
+        ge.columnconfigure(0, weight=1)
+        ge.columnconfigure(1, weight=1)
+        campo_rotulado(ge, 0, "CEP", Campo(ge, self.v_end_cep, largura=12), col=0, columnspan=1)
+        campo_rotulado(ge, 0, "Número", Campo(ge, self.v_end_numero, largura=12), col=1, columnspan=1)
+        campo_rotulado(ge, 3, "Logradouro", Campo(ge, self.v_end_logradouro, largura=40))
+        campo_rotulado(ge, 6, "Complemento", Campo(ge, self.v_end_complemento, largura=40))
+        campo_rotulado(ge, 9, "Bairro", Campo(ge, self.v_end_bairro, largura=22), col=0, columnspan=1)
+        campo_rotulado(ge, 9, "Código IBGE do município", Campo(ge, self.v_cod_ibge, largura=12), col=1, columnspan=1,
+                       dica="Necessário pra nota (campo cMun). Busque em ibge.gov.br/explica/codigos-dos-municipios.")
+
         self.v_regime.trace_add("write", lambda *_: self._atualizar_regime())
         self._atualizar_regime()
         return f
@@ -745,6 +769,9 @@ class DialogoConfiguracaoEmissao(Modal):
         self.cfg.update({
             "regime": self._regime_chave(), "inscricao_municipal": im, "municipio": municipio,
             "uf": self.v_uf.get().strip().upper(), "codigo_municipio_ibge": self.v_cod_ibge.get().strip(),
+            "endereco": {"cep": self.v_end_cep.get().strip(), "logradouro": self.v_end_logradouro.get().strip(),
+                        "numero": self.v_end_numero.get().strip(), "complemento": self.v_end_complemento.get().strip(),
+                        "bairro": self.v_end_bairro.get().strip()},
             "simples": {"aliquota_mes": aliq_simples},
             "identificacao_tomador_padrao": nome_para_identificacao.get(self.v_identificacao_padrao.get(), "documento"),
         })

@@ -10,6 +10,7 @@ from .. import grafico, ui
 from ..core import ErroAdge
 from ..ui import P, Botao, Campo, Cartao, Chip, Interruptor, Modal, Rolavel, Segmentado, F, px, rotulo
 from . import config_schema as es
+from . import dados_oficiais as do
 
 
 def caixa_texto(pai, altura=3, largura=40) -> tk.Frame:
@@ -36,6 +37,49 @@ def campo_rotulado(pai, row, texto, widget, dica="", col=0, columnspan=2):
     return row + (3 if dica else 2)
 
 
+def campo_busca(pai, variavel, funcao_busca, largura=40, linhas_lista=5):
+    """Campo de texto com busca embaixo, tipo o combo do portal: filtra as opções enquanto
+    digita e clicar numa opção substitui o texto do campo por ela (código + descrição)."""
+    moldura = tk.Frame(pai, bg=ui._bg(pai))
+    campo = Campo(moldura, variavel, largura=largura)
+    campo.pack(fill="x")
+    lista = tk.Listbox(moldura, height=linhas_lista, font=F(9), relief="flat", bd=1, highlightthickness=1,
+                       highlightbackground=P.borda_forte, bg=P.campo, fg=P.texto,
+                       selectbackground=P.selecao, selectforeground=P.texto)
+
+    def atualizar(*_a):
+        texto = variavel.get()
+        opcoes = funcao_busca(texto)
+        lista.delete(0, "end")
+        for o in opcoes:
+            lista.insert("end", o)
+        if opcoes:
+            lista.pack(fill="x", pady=(2, 0))
+        else:
+            lista.pack_forget()
+
+    def escolher(_e=None):
+        sel = lista.curselection()
+        if sel:
+            variavel.set(lista.get(sel[0]))
+            lista.pack_forget()
+
+    campo.entry.bind("<KeyRelease>", atualizar)
+    campo.entry.bind("<FocusIn>", atualizar)
+    lista.bind("<<ListboxSelect>>", escolher)
+    moldura.campo = campo
+    moldura.lista = lista
+    return moldura
+
+
+def caixa_aviso(pai, texto, largura=560):
+    """Caixa amarela de aviso (nunca bloqueia salvar — é só pra chamar atenção)."""
+    caixa = tk.Frame(pai, bg=P.aviso_fundo)
+    rotulo(caixa, texto, 9, cor="aviso_texto", largura=px(largura), bg=P.aviso_fundo).pack(
+        anchor="w", padx=px(10), pady=px(8))
+    return caixa
+
+
 # ============================================================================= perfil de serviço
 class DialogoPerfilServico(Modal):
     def __init__(self, pai, perfil: dict, regime_empresa: str):
@@ -46,6 +90,7 @@ class DialogoPerfilServico(Modal):
         self.perfil = {**es.perfil_padrao(), **perfil, "issqn": {**es.issqn_padrao(), **perfil.get("issqn", {})},
                        "pis_cofins": {**es.pis_cofins_padrao(), **perfil.get("pis_cofins", {})},
                        "descricao": {**{"modo": "fixo", "texto": ""}, **perfil.get("descricao", {})}}
+        self.regime_empresa = regime_empresa
         self.regra_pis_cofins = es.pis_cofins_regra(regime_empresa)
         self.regra_issqn = es.issqn_regra(regime_empresa)
         self._montar()
@@ -90,10 +135,17 @@ class DialogoPerfilServico(Modal):
         cartao2.pack(fill="x")
         g2 = cartao2.corpo
         g2.columnconfigure(0, weight=1)
-        r = campo_rotulado(g2, 0, "Código de Tributação Nacional (CTN)", Campo(g2, self.v_ctn, largura=40),
-                           "Copie do combo do portal (ex.: \"99.01.01 - Serviços sem a incidência de ISSQN e ICMS\").")
-        r = campo_rotulado(g2, r, "Item da NBS correspondente ao serviço", Campo(g2, self.v_nbs, largura=40),
-                           "Copie do combo do portal (ex.: \"110021000 - Locação de imóveis residenciais\").")
+        r = campo_rotulado(g2, 0, "Código de Tributação Nacional (CTN)",
+                           campo_busca(g2, self.v_ctn, do.buscar_ctn, largura=40),
+                           "Busca pelo código ou por palavra da descrição, igual ao combo do portal.")
+        self.l_alerta_ctn = caixa_aviso(g2, "")
+        self.l_alerta_ctn.grid(row=r, column=0, sticky="ew", pady=(0, 8))
+        self.l_alerta_ctn.grid_remove()
+        r += 1
+        r = campo_rotulado(g2, r, "Item da NBS correspondente ao serviço",
+                           campo_busca(g2, self.v_nbs, do.buscar_nbs, largura=40),
+                           "Sugestões a partir do Anexo VIII — ainda não é a lista oficial completa de NBS; "
+                           "se o seu serviço não aparecer, copie do combo do portal mesmo assim.")
         if self.regra_issqn == "nao_aplica":
             rotulo(g2, "Empresa MEI: o ISS é o valor fixo do DAS-MEI — a nota não declara tributação por item.",
                   9, cor="suave", largura=px(560)).grid(row=r, column=0, sticky="w", pady=(10, 0))
@@ -102,10 +154,16 @@ class DialogoPerfilServico(Modal):
                         width=30, font=F(10)).grid(row=r, column=0, sticky="w", pady=(10, 3))
             rotulo(g2, "Tributação do ISSQN (\"é caso de imunidade, exportação ou não incidência?\")", 9, cor="suave").grid(
                 row=r + 1, column=0, sticky="w")
-            ttk.Combobox(g2, textvariable=self.v_tp_ret_issqn, values=list(es.TP_RET_ISSQN.values()), state="readonly",
-                        width=30, font=F(10)).grid(row=r + 2, column=0, sticky="w", pady=(10, 3))
-            rotulo(g2, "Retenção do ISSQN", 9, cor="suave").grid(row=r + 3, column=0, sticky="w")
+            self.cb_tp_ret_issqn = ttk.Combobox(g2, textvariable=self.v_tp_ret_issqn, values=list(es.TP_RET_ISSQN.values()),
+                        state="readonly", width=30, font=F(10))
+            self.cb_tp_ret_issqn.grid(row=r + 2, column=0, sticky="w", pady=(10, 3))
+            rotulo(g2, "Retenção do ISSQN (bloqueado em \"Não retido\" quando não é operação tributável — regra oficial E0580)",
+                  9, cor="suave", largura=px(560)).grid(row=r + 3, column=0, sticky="w")
+            self.v_trib_issqn.trace_add("write", lambda *_: self._atualizar_tp_ret_issqn())
+            self._atualizar_tp_ret_issqn()
 
+        self.v_ctn.trace_add("write", lambda *_: self._atualizar_alerta_ctn())
+        self._atualizar_alerta_ctn()
         self._secao_pis_cofins(corpo)
         self._secao_descricao(corpo, p)
         self._secao_info_complementares(corpo, p)
@@ -175,6 +233,30 @@ class DialogoPerfilServico(Modal):
         for filho in w.winfo_children():
             self._definir_estado(filho, estado)
 
+    def _atualizar_tp_ret_issqn(self):
+        """RN oficial E0580: não é permitido haver retenção do ISSQN quando o serviço não é
+        operação tributável (imunidade, exportação ou não incidência) — força "Não retido" e
+        trava o campo nesses casos."""
+        if not hasattr(self, "cb_tp_ret_issqn"):
+            return
+        tributavel = self.v_trib_issqn.get() == es.TRIB_ISSQN[1]
+        if not tributavel:
+            self.v_tp_ret_issqn.set(es.TP_RET_ISSQN[1])
+        self.cb_tp_ret_issqn.configure(state="readonly" if tributavel else "disabled")
+
+    def _atualizar_alerta_ctn(self):
+        """Aviso próprio do ADGE (não bloqueia salvar) quando o CTN escolhido costuma ser do
+        Simples Nacional (ou impeditivo a ele) e a empresa está noutro regime — ver dados_oficiais.py."""
+        aviso = do.alerta_ctn_regime(self.v_ctn.get(), self.regime_empresa)
+        for w in self.l_alerta_ctn.winfo_children():
+            w.destroy()
+        if aviso:
+            rotulo(self.l_alerta_ctn, aviso, 9, cor="aviso_texto", largura=px(540), bg=P.aviso_fundo).pack(
+                anchor="w", padx=px(10), pady=px(8))
+            self.l_alerta_ctn.grid()
+        else:
+            self.l_alerta_ctn.grid_remove()
+
     def _secao_descricao(self, corpo, p):
         ui.secao(corpo, "Descrição do serviço").pack(anchor="w", pady=(16, 6))
         cartao = Cartao(corpo)
@@ -208,12 +290,20 @@ class DialogoPerfilServico(Modal):
         if not ctn or not nbs:
             self.l_erro.config(text="Informe pelo menos o CTN e o NBS.")
             return
+        if not do.ctn_existe(ctn):
+            self.l_erro.config(text="Este CTN não existe na lista oficial do Anexo B (regra do leiaute E0310). "
+                                     "Escolha um da lista de busca.")
+            return
         try:
             aliq_pis = grafico.parse_brl(self.v_aliq_pis.get()) if hasattr(self, "v_aliq_pis") else 0.0
             aliq_cofins = grafico.parse_brl(self.v_aliq_cofins.get()) if hasattr(self, "v_aliq_cofins") else 0.0
         except ValueError as e:
             self.l_erro.config(text=str(e))
             return
+        if self.regra_pis_cofins != "proibido" and self.v_pc_incluir.get():
+            if not (0 <= aliq_pis <= 100) or not (0 <= aliq_cofins <= 100):
+                self.l_erro.config(text="Alíquota de PIS/COFINS tem que estar entre 0% e 100% (regra do leiaute E0686/E0692).")
+                return
         nome_para_chave_pc = {v: k for k, v in es.PIS_COFINS_REGIMES.items()}
         nome_para_trib_issqn = {v: k for k, v in es.TRIB_ISSQN.items()}
         nome_para_tp_ret_issqn = {v: k for k, v in es.TP_RET_ISSQN.items()}

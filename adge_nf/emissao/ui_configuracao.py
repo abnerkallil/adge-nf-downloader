@@ -215,8 +215,8 @@ class DialogoPerfilServico(Modal):
         Campo(linha1, self.v_aliq_cofins, largura=10).pack(anchor="w", pady=(2, 0))
         rotulo(linha1, "Retenção de PIS/COFINS/CSLL", 9, cor="suave").pack(anchor="w")
         ttk.Combobox(linha1, textvariable=self.v_tp_ret_pc, values=list(es.TP_RET_PISCOFINS.values()), state="readonly",
-                    width=34, font=F(10)).pack(anchor="w", pady=(2, 0))
-        rotulo(g, "CST ainda sem lista oficial completa aqui (só 00-03 confirmados): digite o código do portal.",
+                    width=38, font=F(10)).pack(anchor="w", pady=(2, 0))
+        rotulo(g, "CST do PIS/COFINS: 2 dígitos (00-09, 49-56, 60-67, 70-75, 98 ou 99 — lista fechada do XSD).",
               9, cor="suave", largura=px(560)).grid(row=2, column=0, sticky="w", pady=(8, 0))
         self._atualizar_pis_cofins()
 
@@ -304,6 +304,11 @@ class DialogoPerfilServico(Modal):
             if not (0 <= aliq_pis <= 100) or not (0 <= aliq_cofins <= 100):
                 self.l_erro.config(text="Alíquota de PIS/COFINS tem que estar entre 0% e 100% (regra do leiaute E0686/E0692).")
                 return
+            for rotulo_cst, cst in (("PIS", self.v_cst_pis.get().strip()), ("COFINS", self.v_cst_cofins.get().strip())):
+                if cst and cst not in es.CST_PISCOFINS_VALIDOS:
+                    self.l_erro.config(text=f"CST do {rotulo_cst} \"{cst}\" não existe (lista fechada do XSD oficial). "
+                                             "Veja a dica abaixo do campo.")
+                    return
         nome_para_chave_pc = {v: k for k, v in es.PIS_COFINS_REGIMES.items()}
         nome_para_trib_issqn = {v: k for k, v in es.TRIB_ISSQN.items()}
         nome_para_tp_ret_issqn = {v: k for k, v in es.TP_RET_ISSQN.items()}

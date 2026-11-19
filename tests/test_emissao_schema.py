@@ -76,6 +76,15 @@ class EnumsOficiais(unittest.TestCase):
         self.assertEqual(es.pis_cofins_padrao()["tp_ret_pis_cofins"], 0)
         self.assertEqual(es.TP_RET_PISCOFINS[0], "PIS/COFINS/CSLL não retidos")
 
+    def test_tp_ret_pis_cofins_tem_as_10_opcoes_confirmadas_no_xsd(self):
+        self.assertEqual(set(es.TP_RET_PISCOFINS.keys()), set(range(10)))
+
+    def test_cst_piscofins_validos_nao_e_faixa_continua(self):
+        self.assertIn("09", es.CST_PISCOFINS_VALIDOS)
+        self.assertNotIn("10", es.CST_PISCOFINS_VALIDOS)
+        self.assertIn("99", es.CST_PISCOFINS_VALIDOS)
+        self.assertEqual(len(es.CST_PISCOFINS_VALIDOS), 34)
+
     def test_ibscbs_futuro_reservado_e_vazio(self):
         self.assertEqual(es.perfil_padrao()["ibscbs_futuro"], {})
 

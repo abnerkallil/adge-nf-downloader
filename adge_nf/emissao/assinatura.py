@@ -21,6 +21,19 @@ def assinar_dps(xml: str, pfx: str, senha: str) -> str:
     """Devolve o XML da DPS (de `dps.montar_xml`) com a assinatura embutida em `infDPS`, pronta
     para `transmissao.enviar`. Assinatura enveloped: `<Signature>` entra como último filho de
     `<DPS>` (irmão de `infDPS`, conforme o XSD oficial), referenciando o `Id` do `infDPS`."""
+    return _assinar(xml, pfx, senha, "infDPS")
+
+
+def assinar_pedido_evento(xml: str, pfx: str, senha: str) -> str:
+    """Mesma lógica de `assinar_dps`, mas para o `<pedRegEvento>` (ex.: cancelamento de NFS-e,
+    `eventos.montar_cancelamento_xml`) — `<Signature>` vira irmão de `infPedReg`, referenciando o
+    `Id` dele (`TCPedRegEvt`/`TCInfPedReg`, mesmo padrão enveloped da DPS)."""
+    return _assinar(xml, pfx, senha, "infPedReg")
+
+
+def _assinar(xml: str, pfx: str, senha: str, elemento_a_referenciar: str) -> str:
+    """Assinatura enveloped XML-DSig: `<Signature>` entra como último filho da raiz, referenciando
+    o `Id` de `elemento_a_referenciar` (`infDPS` ou `infPedReg`, irmão dela no XSD oficial)."""
     from cryptography.hazmat.primitives.serialization import pkcs12
     from pathlib import Path
     import signxml
@@ -37,20 +50,20 @@ def assinar_dps(xml: str, pfx: str, senha: str) -> str:
         raise ErroAdge("O arquivo do certificado não tem chave privada e certificado juntos.")
 
     root = etree.fromstring(xml.encode("utf-8"))
-    inf_dps = next((el for el in root if etree.QName(el).localname == "infDPS"), None)
-    if inf_dps is None:
-        raise ErroAdge("XML da DPS sem o elemento infDPS - não há o que assinar.")
-    id_dps = inf_dps.get("Id")
-    if not id_dps:
-        raise ErroAdge("infDPS sem atributo Id - não há referência para a assinatura.")
+    inf = next((el for el in root if etree.QName(el).localname == elemento_a_referenciar), None)
+    if inf is None:
+        raise ErroAdge(f"XML sem o elemento {elemento_a_referenciar} - não há o que assinar.")
+    id_inf = inf.get("Id")
+    if not id_inf:
+        raise ErroAdge(f"{elemento_a_referenciar} sem atributo Id - não há referência para a assinatura.")
 
     # Sem placeholder: sem um <Signature> já no documento, o signxml anexa o `<ds:Signature>`
-    # gerado como último filho da raiz (`DPS`) — exatamente onde o XSD espera (irmão de `infDPS`).
+    # gerado como último filho da raiz — exatamente onde o XSD espera (irmão do elemento referenciado).
     signer = signxml.XMLSigner(method=signxml.methods.enveloped,
                                 signature_algorithm=signxml.SignatureMethod.RSA_SHA256,
                                 digest_algorithm=signxml.DigestAlgorithm.SHA256)
     try:
-        assinado = signer.sign(root, key=chave, cert=[cert], reference_uri=f"#{id_dps}")
+        assinado = signer.sign(root, key=chave, cert=[cert], reference_uri=f"#{id_inf}")
     except Exception as e:
-        raise ErroAdge(f"Falha ao assinar a DPS: {e}") from e
+        raise ErroAdge(f"Falha ao assinar: {e}") from e
     return etree.tostring(assinado, encoding="unicode")

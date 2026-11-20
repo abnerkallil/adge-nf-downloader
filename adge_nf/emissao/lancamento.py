@@ -39,7 +39,45 @@ class Lancamento:
     substituicao_chave: str = ""          # subst/chSubstda — chave (50 dígitos) da NFS-e substituída
     substituicao_motivo: str = ""         # subst/cMotivo — ver es.MOTIVOS_SUBSTITUICAO
     substituicao_motivo_texto: str = ""   # subst/xMotivo — opcional, mín. 15 caracteres se preenchido
-    incluir_ibscbs: bool = False          # IBS/CBS ainda não desenvolvido (motor nunca monta esse grupo); guardado pra quando sair
+    # ---------------------------------------------------------------------------------- IBS/CBS
+    # Grupo DPS/infDPS/IBSCBS (reforma tributária) — só é montado quando `incluir_ibscbs=True`.
+    # Campos batidos com o XSD oficial de produção restrita/homologação (ver config_schema.py).
+    incluir_ibscbs: bool = False
+    ibscbs_ind_final: str = ""            # IBSCBS/indFinal — es.IBSCBS_IND_FINAL
+    ibscbs_c_ind_op: str = ""             # IBSCBS/cIndOp — código de 6 dígitos (tabela oficial ANEXO_C-INDOP)
+    ibscbs_tp_oper: str = ""              # IBSCBS/tpOper — es.IBSCBS_TP_OPER (ente governamental/imóvel)
+    ibscbs_tp_ente_gov: str = ""          # IBSCBS/tpEnteGov — es.IBSCBS_TP_ENTE_GOV
+    ibscbs_ref_nfse: list = field(default_factory=list)     # IBSCBS/gRefNFSe/refNFSe — chaves de NFS-e referenciadas
+    ibscbs_ind_dest: str = "0"            # IBSCBS/indDest — es.IBSCBS_IND_DEST (obrigatório quando incluir_ibscbs)
+    # IBSCBS/dest — só quando ibscbs_ind_dest == "1" (destinatário diferente do tomador)
+    ibscbs_dest_documento: str = ""       # CNPJ ou CPF do destinatário, só dígitos
+    ibscbs_dest_nif: str = ""
+    ibscbs_dest_motivo_sem_nif: str = ""  # es.NIF_MOTIVOS
+    ibscbs_dest_nome: str = ""
+    ibscbs_dest_endereco: dict = field(default_factory=dict)   # cep/logradouro/numero/complemento/bairro/municipio/uf/codigo_municipio_ibge
+    ibscbs_dest_telefone: str = ""
+    ibscbs_dest_email: str = ""
+    # IBSCBS/imovel — operações com bem imóvel (exceto obra), ex.: locação
+    ibscbs_imovel_cmun: str = ""          # código IBGE do município do imóvel
+    ibscbs_imovel_pcopropriedade: float = 100.0   # gLocacao/pCopropriedade — 100% se só houver um locador
+    ibscbs_imovel_vtotoper: float = 0.0           # gLocacao/vTotOper
+    ibscbs_imovel_vdescincondtot: float = 0.0     # gLocacao/vDescIncondTot
+    ibscbs_imovel_vdesccondtot: float = 0.0       # gLocacao/vDescCondTot
+    ibscbs_imovel_dvencorig: str = ""             # gLocacao/dVencOrig — "AAAA-MM-DD"
+    # gUnidImob (até 99): cada item {inscimobfisc, cib, endereco{...}, ajustes: [{tipo, descricao, valor}]}
+    # endereco (quando não há cib): cep/logradouro/numero/complemento/bairro — TCEnderImovel
+    ibscbs_unidades_imobiliarias: list = field(default_factory=list)
+    # bensMoveis (até 1000): cada item {ncm, descricao, quantidade} — bens móveis objeto de locação
+    ibscbs_bens_moveis: list = field(default_factory=list)
+    # IBSCBS/valores/trib — tributação do IBS/CBS (obrigatório quando incluir_ibscbs)
+    ibscbs_cst: str = ""                  # CST — es.CST_IBSCBS / dados_oficiais.cst_ibscbs
+    ibscbs_cclasstrib: str = ""           # cClassTrib — sugerido pelo Anexo VIII (não oficial), sempre editável
+    ibscbs_c_cred_pres: str = ""          # gIBSCBS/cCredPres — código do crédito presumido (2 dígitos)
+    ibscbs_cst_reg: str = ""              # gTribRegular/CSTReg — tributação regular alternativa (operações com diferimento)
+    ibscbs_cclasstrib_reg: str = ""       # gTribRegular/cClassTribReg
+    ibscbs_p_dif_uf: float = 0.0          # gDif/pDifUF — percentual de diferimento do IBS estadual
+    ibscbs_p_dif_mun: float = 0.0         # gDif/pDifMun
+    ibscbs_p_dif_cbs: float = 0.0         # gDif/pDifCBS
     obra_codigo: str = ""                 # serv/obra/cObra — CNO ou CEI do INSS (serviço de construção civil)
     obra_cib: str = ""                    # serv/obra/cCIB — Cadastro Imobiliário Brasileiro
     obra_inscricao_imobiliaria: str = ""   # serv/obra/inscImobFisc — opcional, junto de cObra/cCIB/endereço
@@ -87,4 +125,11 @@ class Lancamento:
             erros.append("Competência inválida (use AAAA-MM)")
         if self.valor < 0:
             erros.append("Valor negativo")
+        if self.incluir_ibscbs:
+            if not self.ibscbs_cst:
+                erros.append("IBS/CBS: falta o CST")
+            if not self.ibscbs_cclasstrib:
+                erros.append("IBS/CBS: falta o cClassTrib")
+            if self.ibscbs_ind_dest == "1" and not self.ibscbs_dest_nome.strip():
+                erros.append("IBS/CBS: destinatário diferente do tomador precisa de nome")
         return erros

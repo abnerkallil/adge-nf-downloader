@@ -10,6 +10,7 @@ from pathlib import Path
 from lxml import etree
 
 XSD_DIR = Path(__file__).parent / "xsd"
+XSD_DIR_IBSCBS = Path(__file__).parent / "xsd_ibscbs"
 _PADRAO_SERIE_QUEBRADO = r"^0{0,4}\d{1,5}$"
 _PADRAO_SERIE_CORRIGIDO = r"0{0,4}\d{1,5}"
 
@@ -34,3 +35,11 @@ def esquema_dps() -> etree.XMLSchema:
     parser.resolvers.add(_Resolvedor())
     dps_doc = etree.parse(str(XSD_DIR / "DPS_v1.01.xsd"), parser=parser)
     return etree.XMLSchema(dps_doc)
+
+
+@functools.lru_cache(maxsize=1)
+def esquema_dps_ibscbs() -> etree.XMLSchema:
+    """XSD de produção RESTRITA/homologação (`tests/fixtures/xsd_ibscbs/`, ver README ali) — só
+    esse pacote tem o grupo `IBSCBS`. Esse pacote já corrige sozinho o bug do `TSSerieDPS` (ver
+    README), então não precisa do patch em memória que `esquema_dps()` aplica."""
+    return etree.XMLSchema(etree.parse(str(XSD_DIR_IBSCBS / "DPS_v1.01.xsd")))

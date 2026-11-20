@@ -69,3 +69,4 @@ Os testes (`tests/test_docs.py`) conferem o formato, os códigos e se existe rel
 | ITEM-49 | Busca na aba Empresas salvas |
 | ITEM-50 | Assistente passo a passo de emissão de notas |
 | ITEM-51 | Campos avançados da DPS |
+| ITEM-52 | IBS/CBS na emissão de notas |

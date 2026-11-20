@@ -214,6 +214,120 @@ def moeda_por_texto_formatado(texto_formatado: str) -> dict | None:
     return None
 
 
+# --------------------------------------------------------------------------------------- IBS/CBS
+@lru_cache(maxsize=1)
+def _cclasstrib_lista() -> list[dict]:
+    """Catálogo oficial de cClassTrib/CST do IBS/CBS (`cclasstrib.xlsx`, aba "cClass 2026-09-01",
+    baixado de nfe.fazenda.gov.br em 20/11/2026) — 173 códigos, com CST, percentuais de redução
+    (pRedIBS/pRedCBS) e a citação legal (LC Redação/Link) de cada um."""
+    with open(_PASTA_DADOS / "cclasstrib.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@lru_cache(maxsize=1)
+def _cclasstrib_por_codigo() -> dict[str, dict]:
+    return {r["cclasstrib"]: r for r in _cclasstrib_lista()}
+
+
+@lru_cache(maxsize=1)
+def _cst_ibscbs_lista() -> list[dict]:
+    """Lista oficial fechada de CST do IBS/CBS (aba "CST 2026-09-01" da mesma planilha)."""
+    with open(_PASTA_DADOS / "cst_ibscbs.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@lru_cache(maxsize=1)
+def _anexo_viii_nbs() -> dict[str, dict]:
+    """Sugestão de cClassTrib por NBS (Anexo VIII, correlação Item×NBS×cClassTrib da Receita
+    Federal) — a própria Receita publica esse anexo como "trabalho inicial, ainda em
+    desenvolvimento... NÃO HÁ REGRAS DE NEGÓCIO". Serve só de SUGESTÃO editável, nunca trava nada."""
+    with open(_PASTA_DADOS / "anexo_viii_nbs_cclasstrib.json", encoding="utf-8") as f:
+        return {r["nbs"]: r for r in json.load(f)}
+
+
+def formatar_cclasstrib(registro: dict) -> str:
+    return f"{registro['cclasstrib']} - {registro['nome']}"
+
+
+def listar_cclasstrib() -> list[str]:
+    return [formatar_cclasstrib(r) for r in _cclasstrib_lista()]
+
+
+def buscar_cclasstrib(texto: str, limite: int = 30) -> list[str]:
+    """Busca cClassTrib por código (com/sem pontuação) ou palavra do nome/descrição."""
+    alvo = _normalizar_busca(texto)
+    alvo_codigo = _normalizar_codigo(texto)
+    if not alvo:
+        return listar_cclasstrib()[:limite]
+    achados = [
+        formatar_cclasstrib(r) for r in _cclasstrib_lista()
+        if alvo in _normalizar_busca(r["nome"]) or alvo in _normalizar_busca(r["descricao"])
+        or (alvo_codigo and alvo_codigo in _normalizar_codigo(r["cclasstrib"]))
+    ]
+    return achados[:limite]
+
+
+def cclasstrib_por_texto_formatado(texto_formatado: str) -> dict | None:
+    codigo = (texto_formatado or "").split(" - ", 1)[0].strip()
+    return _cclasstrib_por_codigo().get(_so_digitos(codigo))
+
+
+def cst_por_cclasstrib(cclasstrib: str) -> str:
+    """O CST que acompanha oficialmente este cClassTrib (cada cClassTrib tem um único CST)."""
+    r = _cclasstrib_por_codigo().get(_so_digitos(cclasstrib))
+    return r["cst"] if r else ""
+
+
+def info_legal_cclasstrib(cclasstrib: str) -> dict:
+    """{descricao, lc_redacao, link_lei, p_red_ibs, p_red_cbs} para mostrar a base legal e o
+    percentual de redução oficial deste cClassTrib na tela — "" / None quando não há."""
+    r = _cclasstrib_por_codigo().get(_so_digitos(cclasstrib))
+    if not r:
+        return {}
+    return {"descricao": r["descricao"], "lc_redacao": r["lc_redacao"], "link_lei": r["link_lei"],
+            "p_red_ibs": r["p_red_ibs"], "p_red_cbs": r["p_red_cbs"]}
+
+
+def listar_cst_ibscbs() -> list[str]:
+    return [f"{r['cst']} - {r['descricao']}" for r in _cst_ibscbs_lista()]
+
+
+def sugerir_cclasstrib_por_nbs(nbs_formatado: str) -> list[str]:
+    """Sugestão de cClassTrib a partir do NBS do perfil de serviço (Anexo VIII da Receita,
+    referência NÃO oficial — sempre editável, nunca bloqueia). "" quando o NBS não está no Anexo
+    VIII (ele só cobre um subconjunto dos NBS existentes)."""
+    nbs = (nbs_formatado or "").split(" - ", 1)[0].strip()
+    item = _anexo_viii_nbs().get(nbs)
+    if not item:
+        return []
+    return [formatar_cclasstrib(_cclasstrib_por_codigo()[s["cclasstrib"]]) for s in item["sugestoes"]
+            if s["cclasstrib"] in _cclasstrib_por_codigo()]
+
+
+@lru_cache(maxsize=1)
+def _indop_lista() -> list[dict]:
+    """Tabela oficial do código indicador de operação (ANEXO_C-INDOP_IBSCBS, baixado de
+    gov.br/nfse em 20/11/2026) — usada só como referência de busca para `IBSCBS/cIndOp`
+    (6 dígitos), nunca bloqueia (a lista pode não cobrir todo caso de uso)."""
+    with open(_PASTA_DADOS / "indop_ibscbs.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def formatar_indop(registro: dict) -> str:
+    return f"{registro['codigo']} - {registro['caracteristica']}"
+
+
+def buscar_indop(texto: str, limite: int = 20) -> list[str]:
+    alvo = _normalizar_busca(texto)
+    alvo_codigo = _normalizar_codigo(texto)
+    base = _indop_lista()
+    if alvo:
+        base = [r for r in base if alvo in _normalizar_busca(r["caracteristica"])
+                or alvo in _normalizar_busca(r["tipo_operacao"])
+                or (alvo_codigo and alvo_codigo in r["codigo"])]
+    return [formatar_indop(r) for r in base[:limite]]
+
+
 def alerta_ctn_regime(texto_ou_codigo_ctn: str, regime: str) -> str:
     """Aviso próprio do ADGE (não é rejeição do leiaute): quando o CTN escolhido costuma
     aparecer associado a um Anexo do Simples Nacional (ou é impeditivo ao Simples) e a

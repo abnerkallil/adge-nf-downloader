@@ -18,8 +18,13 @@ Limitações conhecidas, deliberadas (não chutar dado que não temos):
 - `cLocPrestacao` usa o código IBGE do ENDEREÇO DO TOMADOR quando disponível (ex.: locação de imóvel,
   onde o serviço ocorre no município do imóvel) e cai para o município do prestador quando não há
   esse dado — mesma limitação de antes, mas só nos casos em que o tomador não tem o IBGE cadastrado.
-- `IBSCBS`, `obra`, `atvEvento`, `comExt`, `interm`, `subst`, `vDedRed` não são usados ainda (fora
-  do escopo atual: emissão simples pelo prestador, sem IBS/CBS, obra, evento ou comércio exterior).
+- `atvEvento` não é usado ainda (fora do escopo atual).
+- `IBSCBS` (grupo opcional, reforma tributária) é montado por `_montar_ibscbs` quando
+  `lancamento.incluir_ibscbs=True` — validado contra o XSD de produção RESTRITA/homologação
+  (`tests/fixtures/xsd_ibscbs/`), porque esse grupo ainda não existe no XSD de produção vigente
+  usado pelo resto deste arquivo. Campos do leiaute v1.04.01 sem XSD oficial publicado (condomínios,
+  pagamento vinculado/PSP, indZFMALC, indDoacao, estorno de crédito, pagamento antecipado) ficam
+  de fora — ver `config_schema.py`.
 """
 from __future__ import annotations
 
@@ -148,6 +153,46 @@ def montar_campos(empresa: dict, empresa_emissao: dict, perfil: dict, tomador: d
         "informacoes_complementares": es.informacoes_complementares_efetivas(perfil, tomador),
         "competencia": lancamento.competencia,
         "data_emissao": data_emissao,
+        "ibscbs": _ibscbs(lancamento) if lancamento.incluir_ibscbs else None,
+    }
+
+
+def _ibscbs(lancamento) -> dict:
+    """Monta o dict normalizado do grupo IBSCBS a partir dos campos `ibscbs_*` do lançamento
+    (ver `lancamento.py`). Só chamada quando `incluir_ibscbs=True`; `montar_xml` decide o que de
+    fato emitir (campos vazios/grupos incompletos são omitidos, nunca emitidos quebrados)."""
+    ind_dest = lancamento.ibscbs_ind_dest or "0"
+    dest = None
+    if ind_dest == "1":
+        dest = {
+            "documento": lancamento.ibscbs_dest_documento, "nif": lancamento.ibscbs_dest_nif,
+            "motivo_sem_nif": lancamento.ibscbs_dest_motivo_sem_nif, "nome": lancamento.ibscbs_dest_nome,
+            "endereco": dict(lancamento.ibscbs_dest_endereco or {}),
+            "telefone": lancamento.ibscbs_dest_telefone, "email": lancamento.ibscbs_dest_email,
+        }
+    imovel = None
+    if lancamento.ibscbs_imovel_cmun:
+        imovel = {
+            "cmun": lancamento.ibscbs_imovel_cmun,
+            "locacao": {
+                "pcopropriedade": lancamento.ibscbs_imovel_pcopropriedade,
+                "vtotoper": lancamento.ibscbs_imovel_vtotoper,
+                "vdescincondtot": lancamento.ibscbs_imovel_vdescincondtot,
+                "vdesccondtot": lancamento.ibscbs_imovel_vdesccondtot,
+                "dvencorig": lancamento.ibscbs_imovel_dvencorig,
+            } if lancamento.ibscbs_imovel_vtotoper else None,
+            "unidades": [dict(u) for u in (lancamento.ibscbs_unidades_imobiliarias or [])],
+        }
+    return {
+        "ind_final": lancamento.ibscbs_ind_final, "c_ind_op": lancamento.ibscbs_c_ind_op,
+        "tp_oper": lancamento.ibscbs_tp_oper, "ref_nfse": list(lancamento.ibscbs_ref_nfse or []),
+        "tp_ente_gov": lancamento.ibscbs_tp_ente_gov, "ind_dest": ind_dest, "dest": dest, "imovel": imovel,
+        "bens_moveis": [dict(b) for b in (lancamento.ibscbs_bens_moveis or [])],
+        "cst": lancamento.ibscbs_cst, "cclasstrib": lancamento.ibscbs_cclasstrib,
+        "c_cred_pres": lancamento.ibscbs_c_cred_pres,
+        "cst_reg": lancamento.ibscbs_cst_reg, "cclasstrib_reg": lancamento.ibscbs_cclasstrib_reg,
+        "p_dif_uf": lancamento.ibscbs_p_dif_uf, "p_dif_mun": lancamento.ibscbs_p_dif_mun,
+        "p_dif_cbs": lancamento.ibscbs_p_dif_cbs,
     }
 
 
@@ -207,6 +252,14 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     _sub(inf, "nDPS", str(numero))
     _sub(inf, "dCompet", campos["data_emissao"])
     _sub(inf, "tpEmit", "1")  # só prestador emitindo, único fluxo suportado
+    if campos.get("ibscbs"):
+        # `finNFSe` (indicador de finalidade, só "0"=regular existe hoje) só é um campo de
+        # `infDPS` de verdade no XSD de produção RESTRITA/homologação (onde o grupo IBSCBS
+        # também mora) — no XSD de produção vigente ele não existe nesta posição (só aparece,
+        # por engano de quem escreveu o XSD, como primeiro campo de dentro do próprio `IBSCBS`,
+        # que lá é um grupo "esqueleto" sem uso real). Por isso só emitimos aqui quando a nota
+        # tem IBS/CBS — do contrário quebraríamos a validação do XSD de produção vigente.
+        _sub(inf, "finNFSe", "0")
     _sub(inf, "cLocEmi", cod_mun)
 
     subst = campos.get("substituicao")
@@ -274,8 +327,14 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     _sub(loc_prest, "cLocPrestacao", cod_mun_toma or cod_mun)
     c_serv = _sub(serv, "cServ")
     _sub(c_serv, "cTribNac", campos["servico"]["ctn"].zfill(6))
+    # Ordem de `cNBS` dentro de `cServ` mudou entre o XSD de produção vigente (cTribNac, xDescServ,
+    # cNBS) e o de produção RESTRITA/homologação, onde mora o IBSCBS (cTribNac, cNBS, xDescServ) —
+    # só reordena quando a nota tem IBS/CBS, pra não quebrar a validação contra o XSD vigente.
+    tem_ibscbs = bool(campos.get("ibscbs"))
+    if tem_ibscbs and campos["servico"]["nbs"]:
+        _sub(c_serv, "cNBS", campos["servico"]["nbs"].zfill(9))
     _sub(c_serv, "xDescServ", (campos["descricao"] or "")[:2000] or "Serviço prestado")
-    if campos["servico"]["nbs"]:
+    if not tem_ibscbs and campos["servico"]["nbs"]:
         _sub(c_serv, "cNBS", campos["servico"]["nbs"].zfill(9))
     moeda = campos["servico"].get("exportacao_moeda")
     if moeda:
@@ -369,4 +428,128 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
             "aproximado dos tributos (pTotTribSN), que não está no cadastro hoje.")
     _sub(tot_trib, "indTotTrib", "0")
 
+    ibscbs = campos.get("ibscbs")
+    if ibscbs:
+        _montar_ibscbs(inf, ibscbs)
+
     return ET.tostring(root, encoding="unicode")
+
+
+def _montar_ibscbs(inf, ibscbs: dict) -> None:
+    """`IBSCBS` (sibling de `valores`, último filho de `infDPS`) — ordem e grupos batidos com o
+    XSD oficial de produção restrita/homologação (`tests/fixtures/xsd_ibscbs/`, ver README ali;
+    esse grupo não existe no XSD de produção vigente). `CST`/`cClassTrib` são obrigatórios
+    (`Lancamento.validar` já bloqueia nota sem eles); o resto é omitido quando incompleto."""
+    el = _sub(inf, "IBSCBS")
+    if ibscbs.get("ind_final"):
+        _sub(el, "indFinal", ibscbs["ind_final"])
+    if ibscbs.get("c_ind_op"):
+        _sub(el, "cIndOp", _so_digitos(ibscbs["c_ind_op"]).zfill(6)[:6])
+    if ibscbs.get("tp_oper"):
+        _sub(el, "tpOper", ibscbs["tp_oper"])
+    refs = [r for r in (ibscbs.get("ref_nfse") or []) if r]
+    if refs:
+        g_ref = _sub(el, "gRefNFSe")
+        for chave in refs:
+            _sub(g_ref, "refNFSe", chave)
+    if ibscbs.get("tp_ente_gov"):
+        _sub(el, "tpEnteGov", ibscbs["tp_ente_gov"])
+    _sub(el, "indDest", ibscbs.get("ind_dest") or "0")
+
+    dest = ibscbs.get("dest")
+    if dest and (dest.get("nome") or "").strip():
+        el_dest = _sub(el, "dest")
+        tipo_dest = _tipo_documento(dest.get("documento", ""))
+        if tipo_dest == "cpf":
+            _sub(el_dest, "CPF", _so_digitos(dest["documento"]))
+        elif tipo_dest == "cnpj":
+            _sub(el_dest, "CNPJ", _so_digitos(dest["documento"]))
+        elif dest.get("nif"):
+            _sub(el_dest, "NIF", dest["nif"][:40])
+        elif dest.get("motivo_sem_nif"):
+            _sub(el_dest, "cNaoNIF", str(dest["motivo_sem_nif"]))
+        else:
+            raise ErroAdge("IBS/CBS: destinatário diferente do tomador sem CPF/CNPJ, NIF ou motivo de ausência de NIF.")
+        _sub(el_dest, "xNome", dest["nome"][:150])
+        end_dest = dest.get("endereco") or {}
+        cod_mun_dest = _so_digitos(end_dest.get("codigo_municipio_ibge", ""))
+        if end_dest.get("logradouro") and cod_mun_dest:
+            _end_nacional(el_dest, end_dest, cod_mun_dest)
+        fone_dest = _so_digitos(dest.get("telefone", ""))
+        if len(fone_dest) >= 6:
+            _sub(el_dest, "fone", fone_dest[:20])
+        if dest.get("email"):
+            _sub(el_dest, "email", dest["email"][:80])
+
+    imovel = ibscbs.get("imovel")
+    if imovel and imovel.get("cmun"):
+        el_imovel = _sub(el, "imovel")
+        _sub(el_imovel, "cMun", imovel["cmun"])
+        locacao = imovel.get("locacao")
+        if locacao:
+            el_loc = _sub(el_imovel, "gLocacao")
+            _sub(el_loc, "pCopropriedade", _dec(locacao.get("pcopropriedade") or 100.0))
+            _sub(el_loc, "vTotOper", _dec(locacao["vtotoper"]))
+            if locacao.get("vdescincondtot"):
+                _sub(el_loc, "vDescIncondTot", _dec(locacao["vdescincondtot"]))
+            if locacao.get("vdesccondtot"):
+                _sub(el_loc, "vDescCondTot", _dec(locacao["vdesccondtot"]))
+            if locacao.get("dvencorig"):
+                _sub(el_loc, "dVencOrig", locacao["dvencorig"])
+        for unidade in imovel.get("unidades") or []:
+            endereco_un = unidade.get("endereco") or {}
+            end_valido = bool(endereco_un.get("cep") and endereco_un.get("logradouro"))
+            if not unidade.get("cib") and not end_valido:
+                continue  # unidade incompleta (sem CIB nem endereço válido) — não monta quebrada
+            el_un = _sub(el_imovel, "gUnidImob")
+            if unidade.get("inscimobfisc"):
+                _sub(el_un, "inscImobFisc", unidade["inscimobfisc"][:30])
+            if unidade.get("cib"):
+                _sub(el_un, "cCIB", unidade["cib"])
+            else:
+                el_end_un = _sub(el_un, "end")
+                _sub(el_end_un, "CEP", _so_digitos(endereco_un.get("cep", "")).zfill(8)[:8])
+                _sub(el_end_un, "xLgr", endereco_un["logradouro"][:255])
+                _sub(el_end_un, "nro", (endereco_un.get("numero") or "S/N")[:60])
+                if endereco_un.get("complemento"):
+                    _sub(el_end_un, "xCpl", endereco_un["complemento"][:156])
+                if endereco_un.get("bairro"):
+                    _sub(el_end_un, "xBairro", endereco_un["bairro"][:60])
+            for ajuste in unidade.get("ajustes") or []:
+                if not ajuste.get("tipo"):
+                    continue
+                el_aj = _sub(el_un, "gAjusteBCLocImoveis")
+                _sub(el_aj, "tpAjusteBCLocImoveis", ajuste["tipo"])
+                if ajuste.get("descricao"):
+                    _sub(el_aj, "xTpAjusteBCLocImoveis", ajuste["descricao"][:150])
+                _sub(el_aj, "vAjusteBCLocImoveis", _dec(ajuste.get("valor")))
+
+    for bem in ibscbs.get("bens_moveis") or []:
+        if not bem.get("ncm"):
+            continue
+        el_bem = _sub(el, "bensMoveis")
+        _sub(el_bem, "cNCMBemMovel", _so_digitos(bem["ncm"]).zfill(8)[:8])
+        _sub(el_bem, "xNCMBemMovel", (bem.get("descricao") or "")[:150])
+        _sub(el_bem, "qtdNCMBemMovel", str(int(bem.get("quantidade") or 1)))
+
+    if not ibscbs.get("cst") or not ibscbs.get("cclasstrib"):
+        raise ErroAdge("IBS/CBS: falta o CST ou o cClassTrib (Lancamento.validar deveria ter bloqueado antes).")
+    el_valores = _sub(el, "valores")
+    el_trib = _sub(el_valores, "trib")
+    _sub(el_trib, "CST", ibscbs["cst"].zfill(3)[:3])
+    _sub(el_trib, "cClassTrib", ibscbs["cclasstrib"].zfill(6)[:6])
+    tem_dif = bool(ibscbs.get("p_dif_uf") or ibscbs.get("p_dif_mun") or ibscbs.get("p_dif_cbs"))
+    tem_reg = bool(ibscbs.get("cst_reg") and ibscbs.get("cclasstrib_reg"))
+    if ibscbs.get("c_cred_pres") or tem_reg or tem_dif:
+        el_g = _sub(el_trib, "gIBSCBS")
+        if ibscbs.get("c_cred_pres"):
+            _sub(el_g, "cCredPres", ibscbs["c_cred_pres"].zfill(2)[:2])
+        if tem_reg:
+            el_reg = _sub(el_g, "gTribRegular")
+            _sub(el_reg, "CSTReg", ibscbs["cst_reg"].zfill(3)[:3])
+            _sub(el_reg, "cClassTribReg", ibscbs["cclasstrib_reg"].zfill(6)[:6])
+        if tem_dif:
+            el_dif = _sub(el_g, "gDif")
+            _sub(el_dif, "pDifUF", _dec(ibscbs.get("p_dif_uf")))
+            _sub(el_dif, "pDifMun", _dec(ibscbs.get("p_dif_mun")))
+            _sub(el_dif, "pDifCBS", _dec(ibscbs.get("p_dif_cbs")))

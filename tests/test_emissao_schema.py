@@ -92,8 +92,9 @@ class EnumsOficiais(unittest.TestCase):
         self.assertIn("99", es.CST_PISCOFINS_VALIDOS)
         self.assertEqual(len(es.CST_PISCOFINS_VALIDOS), 34)
 
-    def test_ibscbs_futuro_reservado_e_vazio(self):
-        self.assertEqual(es.perfil_padrao()["ibscbs_futuro"], {})
+    def test_perfil_padrao_sem_campo_ibscbs_proprio(self):
+        """IBS/CBS agora mora no `Lancamento` (por nota), não no perfil — ver `lancamento.py`."""
+        self.assertNotIn("ibscbs_futuro", es.perfil_padrao())
 
 
 class Migracao(unittest.TestCase):

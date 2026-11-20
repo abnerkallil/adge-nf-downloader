@@ -11,8 +11,9 @@ XSD oficial, `TSTipoRetPISCofins` em `tiposSimples_v1.01.xsd`). `cst_pis`/`cst_c
 não é uma faixa contínua (é uma lista fechada de 34 valores confirmada no XSD, `TSTipoCST`) — vira combobox quando
 tivermos as descrições de cada código.
 
-Reservado para quando sair de homologação: `perfil["ibscbs_futuro"]` (ex.: tpAjusteBCLocImoveis, cClassTrib) —
-hoje fica sempre `{}`, sem tela própria ainda.
+IBS/CBS (reforma tributária): os campos de perfil ficam com `ctn`/`nbs` (serviço), os de cada nota
+ficam no `Lancamento` (`ibscbs_*`, ver `lancamento.py`) — a sugestão de `cClassTrib` a partir do NBS
+do perfil vem do Anexo VIII (`dados_oficiais.sugerir_cclasstrib_por_nbs`), não fica guardada aqui.
 """
 from __future__ import annotations
 
@@ -119,6 +120,57 @@ NIF_MOTIVOS = {
 """`toma/cNaoNIF` (leiaute oficial, `TSCodNaoNIF`) — só usado quando o tomador é estrangeiro, não
 tem CPF/CNPJ nem NIF, e algum desses motivos justifica a ausência."""
 
+# --------------------------------------------------------------------------------------- IBS/CBS
+"""Grupo `DPS/infDPS/IBSCBS` (reforma tributária, LC 214/2025 com redação da LC 227/2026). Campos e
+enums batidos com o XSD oficial de PRODUÇÃO RESTRITA/homologação (NFSe-ESQUEMAS_XSD-PRODREST-v1.01-20261020,
+baixado de gov.br/nfse/.../documentacao-tecnica/producao-restrita em 20/11/2026) — esse grupo ainda
+NÃO existe no XSD de produção vigente (ver tests/fixtures/xsd_ibscbs/README.md). Alguns campos do
+leiaute v1.04.01 (condomínios, pagamento vinculado/PSP, indZFMALC, indDoacao, estorno de crédito,
+pagamento antecipado) não existem em NENHUM XSD oficial publicado até agora — ficam de fora da
+emissão, só reservados aqui quando citado nos comentários."""
+
+IBSCBS_IND_FINAL = {
+    "0": "Não (operação normal, não é uso/consumo pessoal)",
+    "1": "Sim (uso ou consumo pessoal, art. 57)",
+}
+
+IBSCBS_TP_OPER = {
+    "1": "Fornecimento com pagamento posterior",
+    "2": "Recebimento do pagamento com fornecimento já realizado",
+    "3": "Fornecimento com pagamento já realizado",
+    "4": "Recebimento do pagamento com fornecimento posterior",
+    "5": "Fornecimento e recebimento do pagamento concomitantes",
+}
+"""`IBSCBS/tpOper` — só para operações com entes governamentais ou outros serviços sobre bens
+imóveis (`TSRTCTpOper`)."""
+
+IBSCBS_TP_ENTE_GOV = {
+    "1": "União",
+    "2": "Estado",
+    "3": "Distrito Federal",
+    "4": "Município",
+}
+
+IBSCBS_IND_DEST = {
+    "0": "O destinatário é o próprio tomador (tomador = adquirente = destinatário)",
+    "1": "O destinatário não é o próprio tomador (outra pessoa ou estabelecimento)",
+}
+"""`IBSCBS/indDest` — obrigatório sempre que o grupo IBS/CBS é incluído (`TSRTCIndDest`)."""
+
+IBSCBS_TP_AJUSTE_BC_LOC_IMOVEIS = {
+    "01": "Tributos inclusos no aluguel (ex.: IPTU) — só NBS 1.1002.10.00 ou 1.1002.20.00",
+    "02": "Emolumento incluso no aluguel — só NBS 1.1002.10.00 ou 1.1002.20.00",
+    "03": "Condomínio incluso no aluguel — só NBS 1.1002.10.00 ou 1.1002.20.00",
+    "04": "Redutor Social (Art. 260, LC 214/2025) — só NBS 1.1002.10.00",
+    "99": "Outras parcelas inclusas no aluguel",
+}
+"""`gAjusteBCLocImoveis/tpAjusteBCLocImoveis` (`TSAjusteBCLocImoveis`) — valores que NÃO entram na
+base de cálculo do IBS/CBS de locação de imóveis. O código 04 é o redutor social da locação
+residencial (R$ 600/mês por imóvel, Art. 260 da LC 214/2025 com redação da LC 227/2026)."""
+
+NIF_MOTIVOS_IBSCBS = NIF_MOTIVOS
+"""`IBSCBS/dest` usa o mesmo `cNaoNIF` (`TSCodNaoNIF`) do tomador — ver `NIF_MOTIVOS`."""
+
 MARCADORES = ("{MES}", "{ANO}")
 
 MESES_PT = ("Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto",
@@ -169,7 +221,6 @@ def perfil_padrao(nome: str = "") -> dict:
         "pis_cofins": pis_cofins_padrao(),
         "descricao": {"modo": "fixo", "texto": ""},
         "informacoes_complementares": "",
-        "ibscbs_futuro": {},
     }
 
 

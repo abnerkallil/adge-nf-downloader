@@ -1,18 +1,18 @@
-"""Tela de emissão de notas: lançar (manual, planilha ou documento do cliente) e conferir antes
-de transmitir. Aberta pelo botão "Emitir Notas" do cartão da empresa (ver app.py), ao lado do
-botão "Configurar para Emissão de Notas" da tela de configuração (Dev A).
+"""Tela de emissão de notas: lançar (manual, planilha ou documento do cliente), conferir e
+transmitir de verdade (assinatura + POST /nfse ao Sefin Nacional). Aberta pelo botão "Emitir Notas"
+do cartão da empresa (ver app.py), ao lado do botão "Configurar para Emissão de Notas" (Dev A).
 
-A transmissão de verdade ainda não está pronta (`emissao/transmissao.py`, `emissao/assinatura.py`
-e `emissao/dps.montar_xml` aguardam a pesquisa da API) — por isso o botão "Transmitir" fica
-desligado e avisa o motivo, mas todo o lançamento e a prévia já funcionam de ponta a ponta."""
+Enquanto `transmissao.PRODUCAO_REAL_LIBERADA` for False, toda transmissão sai em homologação/
+produção restrita (`transmissao.ambiente_ativo()`), nunca em produção real — só o Abner liga isso,
+depois de testar. Cada nota é conferida (`DialogoConferenciaNota`) antes de ser enviada."""
 import datetime as dt
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
 
-from . import ui
+from . import core, ui
 from .core import ErroAdge
-from .emissao import config_schema as es
+from .emissao import arquivo, assinatura, config_schema as es, dps, eventos, historico, transmissao
 from .emissao import dados_oficiais as do
 from .emissao import importador_documento as impdoc
 from .emissao import planilha_emissao as pe
@@ -43,6 +43,7 @@ class DialogoEmissao(Modal):
         self.emissao_cfg = self.emp.get("emissao") or {}
         self.lancamentos = []
         self.itens = []
+        self._status_transmissao = {}  # lancamento.id -> (sucesso: bool, mensagem: str)
         self.resizable(True, True)
         self._montar()
         tela_h = self.winfo_screenheight()
@@ -77,13 +78,14 @@ class DialogoEmissao(Modal):
         rodape = tk.Frame(self, bg=P.fundo)
         rodape.pack(fill="x", pady=(10, 0))
         Botao(rodape, "Fechar", self.destroy).pack(side="right")
+        Botao(rodape, "Notas emitidas / cancelar", self._abrir_historico, estilo="secundario").pack(side="right", padx=(0, 8))
         Botao(rodape, "Excluir selecionada(s)", self._excluir_selecao).pack(side="right", padx=(0, 8))
         Botao(rodape, "Definir perfil da selecionada", self._definir_perfil, estilo="secundario").pack(side="right", padx=(0, 8))
         self.b_transmitir = Botao(rodape, "Transmitir notas prontas", self._transmitir, estilo="primario")
         self.b_transmitir.pack(side="left")
-        self.b_transmitir.configure(state="disabled")
-        rotulo(rodape, "Transmissão real ainda não disponível nesta versão (aguardando a pesquisa da API).",
-              9, cor="suave").pack(side="left", padx=(10, 0))
+        ambiente_txt = ("PRODUÇÃO REAL" if transmissao.ambiente_ativo() == transmissao.TP_AMB_PRODUCAO
+                        else "homologação/produção restrita")
+        rotulo(rodape, f"Ambiente ativo: {ambiente_txt}.", 9, cor="suave").pack(side="left", padx=(10, 0))
 
     def _trocar_aba(self):
         abas = {"manual": self.f_manual, "planilha": self.f_planilha, "documento": self.f_documento}
@@ -119,6 +121,17 @@ class DialogoEmissao(Modal):
         self.v_obra_end_postal_ext, self.v_obra_end_cidade_ext, self.v_obra_end_estado_ext = v(), v(), v()
         self.v_export_moeda, self.v_export_valor = v(), v()
         self.v_ibscbs = v("Não")
+        self.v_ibscbs_cclasstrib = v()
+        self.v_ibscbs_sugestao = v("")
+        self.v_ibscbs_ind_dest = tk.BooleanVar(value=False)
+        self.v_ibscbs_dest_doc, self.v_ibscbs_dest_nome = v(), v()
+        self.v_ibscbs_imovel = tk.BooleanVar(value=False)
+        self.v_ibscbs_imovel_mun, self.v_ibscbs_imovel_valor, self.v_ibscbs_imovel_cop = v(), v(), v("100")
+        self.v_ibscbs_unid_insc, self.v_ibscbs_unid_cib = v(), v()
+        self.v_ibscbs_unid_cep, self.v_ibscbs_unid_log, self.v_ibscbs_unid_num = v(), v(), v()
+        self.v_ibscbs_unid_compl, self.v_ibscbs_unid_bairro = v(), v()
+        self._ibscbs_ajustes = []   # [(tipo_var, valor_var, frame)]
+        self._ibscbs_bens_moveis = []  # [(ncm_var, desc_var, qtd_var, frame)]
 
         self.v_etapa_assistente = tk.StringVar(value="tomador")
         Segmentado(f, self.ETAPAS_ASSISTENTE, self.v_etapa_assistente, self._trocar_etapa_assistente).pack(
@@ -299,11 +312,193 @@ class DialogoEmissao(Modal):
         f = Cartao(pai)
         c = f.corpo
         rotulo(c, "IBS/CBS (reforma tributária)", 12, "bold", "verde_escuro").pack(anchor="w")
-        rotulo(c, "Ainda não desenvolvido nesta versão: marcar \"Sim\" não muda a nota emitida. "
-                  "Deixe em \"Não\" até esse grupo entrar de verdade.", 10, cor="suave", largura=px(620)).pack(
-            anchor="w", pady=(4, 10))
+        rotulo(c, "Grupo opcional da DPS, validado contra o leiaute de produção restrita/homologação "
+                  "(ainda não é o de produção vigente). Deixe em \"Não\" enquanto isso não entrar em produção.",
+              10, cor="suave", largura=px(620)).pack(anchor="w", pady=(4, 10))
         ttk.Combobox(c, textvariable=self.v_ibscbs, values=["Não", "Sim"], state="readonly", width=12, font=F(10)).pack(anchor="w")
+        self.f_ibscbs_corpo = tk.Frame(c, bg=P.superficie)
+        self.f_ibscbs_corpo.pack(fill="x", pady=(10, 0))
+        self.v_ibscbs.trace_add("write", lambda *_: self._atualizar_ibscbs())
+
+        g = self.f_ibscbs_corpo
+        g.columnconfigure(0, weight=1)
+        g.columnconfigure(1, weight=1)
+        rotulo(g, "Tributação do IBS/CBS", 9, "bold", "suave").grid(row=0, column=0, columnspan=2, sticky="w")
+        campo_rotulado(g, 1, "cClassTrib", campo_busca(g, self.v_ibscbs_cclasstrib, do.buscar_cclasstrib, largura=40,
+                       ao_escolher=self._ao_escolher_cclasstrib), col=0, columnspan=2,
+                       dica="Sugestão vem do Anexo VIII da Receita (referência não oficial) a partir do NBS do perfil "
+                            "escolhido; sempre editável. O CST correspondente é preenchido sozinho.")
+        self.l_ibscbs_sugestao = rotulo(g, "", 9, cor="suave", largura=px(560))
+        self.l_ibscbs_sugestao.grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 10))
+
+        Interruptor(g, "Destinatário diferente do tomador", self.v_ibscbs_ind_dest, self._atualizar_ibscbs_dest).grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        self.f_ibscbs_dest = tk.Frame(g, bg=P.superficie)
+        self.f_ibscbs_dest.grid(row=5, column=0, columnspan=2, sticky="ew")
+        self.f_ibscbs_dest.columnconfigure(0, weight=1)
+        self.f_ibscbs_dest.columnconfigure(1, weight=1)
+        campo_rotulado(self.f_ibscbs_dest, 0, "Nome do destinatário", Campo(self.f_ibscbs_dest, self.v_ibscbs_dest_nome, largura=30), col=0, columnspan=1)
+        campo_rotulado(self.f_ibscbs_dest, 0, "CPF ou CNPJ", Campo(self.f_ibscbs_dest, self.v_ibscbs_dest_doc, largura=22), col=1, columnspan=1)
+        self.f_ibscbs_dest.grid_remove()
+
+        Interruptor(g, "Operação com bem imóvel (ex.: locação) — necessário para o redutor social",
+                   self.v_ibscbs_imovel, self._atualizar_ibscbs_imovel).grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 4))
+        self.f_ibscbs_imovel = tk.Frame(g, bg=P.superficie)
+        self.f_ibscbs_imovel.grid(row=7, column=0, columnspan=2, sticky="ew")
+        gi = self.f_ibscbs_imovel
+        gi.columnconfigure(0, weight=1)
+        gi.columnconfigure(1, weight=1)
+        campo_rotulado(gi, 0, "Município do imóvel", campo_busca(gi, self.v_ibscbs_imovel_mun, do.buscar_municipio, largura=28),
+                       col=0, columnspan=1)
+        campo_rotulado(gi, 0, "% de copropriedade", Campo(gi, self.v_ibscbs_imovel_cop, largura=10), col=1, columnspan=1,
+                       dica="100% se só houver um locador/cedente/arrendador.")
+        campo_rotulado(gi, 3, "Valor total da operação (R$)", Campo(gi, self.v_ibscbs_imovel_valor, largura=18))
+        rotulo(gi, "Unidade imobiliária", 9, "bold", "suave").grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 3))
+        campo_rotulado(gi, 7, "Inscrição imobiliária/IPTU (opcional)", Campo(gi, self.v_ibscbs_unid_insc, largura=22), col=0, columnspan=1)
+        campo_rotulado(gi, 7, "CIB (8 caracteres, se tiver)", Campo(gi, self.v_ibscbs_unid_cib, largura=12), col=1, columnspan=1)
+        rotulo(gi, "Sem CIB, informe o endereço do imóvel:", 9, cor="suave").grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 2))
+        campo_rotulado(gi, 11, "CEP", Campo(gi, self.v_ibscbs_unid_cep, largura=12), col=0, columnspan=1)
+        campo_rotulado(gi, 11, "Número", Campo(gi, self.v_ibscbs_unid_num, largura=12), col=1, columnspan=1)
+        campo_rotulado(gi, 14, "Logradouro", Campo(gi, self.v_ibscbs_unid_log, largura=40))
+        campo_rotulado(gi, 17, "Complemento", Campo(gi, self.v_ibscbs_unid_compl, largura=22), col=0, columnspan=1)
+        campo_rotulado(gi, 17, "Bairro", Campo(gi, self.v_ibscbs_unid_bairro, largura=22), col=1, columnspan=1)
+        rotulo(gi, "Ajustes da base de cálculo (ex.: redutor social, IPTU incluso)", 9, "bold", "suave").grid(
+            row=20, column=0, columnspan=2, sticky="w", pady=(12, 3))
+        self.f_ibscbs_ajustes = tk.Frame(gi, bg=P.superficie)
+        self.f_ibscbs_ajustes.grid(row=21, column=0, columnspan=2, sticky="ew")
+        self.f_ibscbs_ajustes.columnconfigure(0, weight=1)
+        Botao(gi, "+ Adicionar ajuste", lambda: self._adicionar_linha_ajuste(), estilo="suave").grid(
+            row=22, column=0, sticky="w", pady=(4, 0))
+        self.f_ibscbs_imovel.grid_remove()
+
+        rotulo(g, "Bens móveis objeto de locação (opcional)", 9, "bold", "suave").grid(
+            row=8, column=0, columnspan=2, sticky="w", pady=(14, 3))
+        self.f_ibscbs_bens = tk.Frame(g, bg=P.superficie)
+        self.f_ibscbs_bens.grid(row=9, column=0, columnspan=2, sticky="ew")
+        self.f_ibscbs_bens.columnconfigure(0, weight=1)
+        Botao(g, "+ Adicionar bem móvel", lambda: self._adicionar_linha_bem_movel(), estilo="suave").grid(
+            row=10, column=0, sticky="w", pady=(4, 0))
+
+        self.f_ibscbs_corpo.pack_forget()
         return f
+
+    def _atualizar_ibscbs(self):
+        if self.v_ibscbs.get() == "Sim":
+            self.f_ibscbs_corpo.pack(fill="x", pady=(10, 0))
+            self._sugerir_cclasstrib_do_perfil()
+        else:
+            self.f_ibscbs_corpo.pack_forget()
+
+    def _ao_escolher_cclasstrib(self):
+        reg = do.cclasstrib_por_texto_formatado(self.v_ibscbs_cclasstrib.get())
+        if not reg:
+            self.l_ibscbs_sugestao.configure(text="")
+            return
+        info = do.info_legal_cclasstrib(reg["cclasstrib"])
+        partes = [f"CST: {reg['cst']}"]
+        if info.get("p_red_ibs") or info.get("p_red_cbs"):
+            partes.append(f"Redução: IBS {info.get('p_red_ibs', 0)}% / CBS {info.get('p_red_cbs', 0)}%")
+        if info.get("link_lei"):
+            partes.append(f"Base legal: {info['link_lei']}")
+        self.l_ibscbs_sugestao.configure(text=" — ".join(partes))
+
+    def _sugerir_cclasstrib_do_perfil(self):
+        perfil = self._perfis_por_nome.get(self.v_assist_perfil.get())
+        if not perfil or not perfil.get("nbs"):
+            return
+        sugestoes = do.sugerir_cclasstrib_por_nbs(perfil["nbs"])
+        if sugestoes and not self.v_ibscbs_cclasstrib.get():
+            self.v_ibscbs_cclasstrib.set(sugestoes[0])
+            self._ao_escolher_cclasstrib()
+
+    def _atualizar_ibscbs_dest(self):
+        (self.f_ibscbs_dest.grid if self.v_ibscbs_ind_dest.get() else self.f_ibscbs_dest.grid_remove)()
+
+    def _atualizar_ibscbs_imovel(self):
+        (self.f_ibscbs_imovel.grid if self.v_ibscbs_imovel.get() else self.f_ibscbs_imovel.grid_remove)()
+
+    def _adicionar_linha_ajuste(self, tipo="04", valor=""):
+        linha = tk.Frame(self.f_ibscbs_ajustes, bg=P.superficie)
+        linha.pack(fill="x", pady=(0, 4))
+        v_tipo = tk.StringVar(value=es.IBSCBS_TP_AJUSTE_BC_LOC_IMOVEIS.get(tipo, next(iter(es.IBSCBS_TP_AJUSTE_BC_LOC_IMOVEIS.values()))))
+        v_valor = tk.StringVar(value=valor)
+        ttk.Combobox(linha, textvariable=v_tipo, values=list(es.IBSCBS_TP_AJUSTE_BC_LOC_IMOVEIS.values()),
+                    state="readonly", width=46, font=F(10)).pack(side="left")
+        Campo(linha, v_valor, largura=14).pack(side="left", padx=(6, 0))
+        item = [v_tipo, v_valor, linha]
+        Botao(linha, "Remover", lambda: self._remover_linha(self._ibscbs_ajustes, item), estilo="suave").pack(side="left", padx=(6, 0))
+        self._ibscbs_ajustes.append(item)
+
+    def _adicionar_linha_bem_movel(self, ncm="", desc="", qtd="1"):
+        linha = tk.Frame(self.f_ibscbs_bens, bg=P.superficie)
+        linha.pack(fill="x", pady=(0, 4))
+        v_ncm, v_desc, v_qtd = tk.StringVar(value=ncm), tk.StringVar(value=desc), tk.StringVar(value=qtd)
+        Campo(linha, v_ncm, largura=10).pack(side="left")
+        Campo(linha, v_desc, largura=30).pack(side="left", padx=(6, 0))
+        Campo(linha, v_qtd, largura=6).pack(side="left", padx=(6, 0))
+        item = [v_ncm, v_desc, v_qtd, linha]
+        Botao(linha, "Remover", lambda: self._remover_linha(self._ibscbs_bens_moveis, item), estilo="suave").pack(side="left", padx=(6, 0))
+        self._ibscbs_bens_moveis.append(item)
+
+    def _remover_linha(self, lista, item):
+        item[-1].destroy()
+        lista.remove(item)
+
+    def _coletar_campos_ibscbs(self) -> dict:
+        """Monta os kwargs `ibscbs_*` do `Lancamento` a partir do estado da etapa IBS/CBS."""
+        nome_para_tp_ajuste = {v: k for k, v in es.IBSCBS_TP_AJUSTE_BC_LOC_IMOVEIS.items()}
+        reg_cclasstrib = do.cclasstrib_por_texto_formatado(self.v_ibscbs_cclasstrib.get())
+        campos = {
+            "ibscbs_cclasstrib": reg_cclasstrib["cclasstrib"] if reg_cclasstrib else "",
+            "ibscbs_cst": reg_cclasstrib["cst"] if reg_cclasstrib else "",
+            "ibscbs_ind_dest": "1" if self.v_ibscbs_ind_dest.get() else "0",
+        }
+        if self.v_ibscbs_ind_dest.get():
+            campos["ibscbs_dest_nome"] = self.v_ibscbs_dest_nome.get().strip()
+            campos["ibscbs_dest_documento"] = self.v_ibscbs_dest_doc.get().strip()
+        if self.v_ibscbs_imovel.get():
+            municipio = do.municipio_por_texto_formatado(self.v_ibscbs_imovel_mun.get())
+            campos["ibscbs_imovel_cmun"] = (municipio or {}).get("codigo_ibge", "")
+            campos["ibscbs_imovel_vtotoper"] = pe.valor_numerico(self.v_ibscbs_imovel_valor.get())
+            try:
+                campos["ibscbs_imovel_pcopropriedade"] = float((self.v_ibscbs_imovel_cop.get() or "100").replace(",", "."))
+            except ValueError:
+                campos["ibscbs_imovel_pcopropriedade"] = 100.0
+            ajustes = [{"tipo": nome_para_tp_ajuste.get(t.get(), "99"), "descricao": "", "valor": pe.valor_numerico(val.get())}
+                       for t, val, _ in self._ibscbs_ajustes]
+            campos["ibscbs_unidades_imobiliarias"] = [{
+                "inscimobfisc": self.v_ibscbs_unid_insc.get().strip(), "cib": self.v_ibscbs_unid_cib.get().strip(),
+                "endereco": {"cep": self.v_ibscbs_unid_cep.get().strip(), "logradouro": self.v_ibscbs_unid_log.get().strip(),
+                             "numero": self.v_ibscbs_unid_num.get().strip(), "complemento": self.v_ibscbs_unid_compl.get().strip(),
+                             "bairro": self.v_ibscbs_unid_bairro.get().strip()},
+                "ajustes": ajustes,
+            }]
+        if self._ibscbs_bens_moveis:
+            campos["ibscbs_bens_moveis"] = [
+                {"ncm": ncm.get().strip(), "descricao": desc.get().strip(), "quantidade": int(pe.valor_numerico(qtd.get()) or 1)}
+                for ncm, desc, qtd, _ in self._ibscbs_bens_moveis]
+        return campos
+
+    def _limpar_etapa_ibscbs(self):
+        self.v_ibscbs.set("Não")
+        self.v_ibscbs_cclasstrib.set("")
+        self.l_ibscbs_sugestao.configure(text="")
+        self.v_ibscbs_ind_dest.set(False)
+        self._atualizar_ibscbs_dest()
+        self.v_ibscbs_dest_doc.set("")
+        self.v_ibscbs_dest_nome.set("")
+        self.v_ibscbs_imovel.set(False)
+        self._atualizar_ibscbs_imovel()
+        for var in (self.v_ibscbs_imovel_mun, self.v_ibscbs_imovel_valor, self.v_ibscbs_unid_insc, self.v_ibscbs_unid_cib,
+                    self.v_ibscbs_unid_cep, self.v_ibscbs_unid_log, self.v_ibscbs_unid_num, self.v_ibscbs_unid_compl,
+                    self.v_ibscbs_unid_bairro):
+            var.set("")
+        self.v_ibscbs_imovel_cop.set("100")
+        for item in list(self._ibscbs_ajustes):
+            self._remover_linha(self._ibscbs_ajustes, item)
+        for item in list(self._ibscbs_bens_moveis):
+            self._remover_linha(self._ibscbs_bens_moveis, item)
+        self._atualizar_ibscbs()
 
     # ---- etapa 5: revisão
     def _etapa_revisao(self, pai):
@@ -321,7 +516,8 @@ class DialogoEmissao(Modal):
         linhas = [
             f"Tomador: {tomador_txt}", f"Perfil: {self.v_assist_perfil.get() or '—'}",
             f"Valor: {self.v_valor.get() or '—'}", f"Competência: {self.v_comp.get() or '—'}",
-            f"IBS/CBS: {self.v_ibscbs.get()}",
+            f"IBS/CBS: {self.v_ibscbs.get()}" + (f" (cClassTrib {self.v_ibscbs_cclasstrib.get().split(' - ')[0]})"
+                                                   if self.v_ibscbs.get() == "Sim" and self.v_ibscbs_cclasstrib.get() else ""),
         ]
         if self.v_mostrar_avancado.get():
             linhas.append("Tem opções avançadas preenchidas (desconto/retenção/intermediário/substituição).")
@@ -344,6 +540,8 @@ class DialogoEmissao(Modal):
             end = es.endereco_completo(tomador_cadastrado)
         retido = {"Sim": True, "Não": False}.get(self.v_retencao_pc.get())
         perfil = self._perfis_por_nome.get(self.v_assist_perfil.get())
+        incluir_ibscbs = self.v_ibscbs.get() == "Sim"
+        ibscbs_campos = self._coletar_campos_ibscbs() if incluir_ibscbs else {}
         try:
             lanc = Lancamento(
                 tomador_nome=nome, tomador_documento=doc, endereco=end, nif=nif, motivo_sem_nif=motivo_sem_nif,
@@ -371,8 +569,8 @@ class DialogoEmissao(Modal):
                 obra_end_estado_exterior=self.v_obra_end_estado_ext.get().strip(),
                 exportacao_moeda=(do.moeda_por_texto_formatado(self.v_export_moeda.get()) or {}).get("codigo_numerico", ""),
                 exportacao_valor_moeda=pe.valor_numerico(self.v_export_valor.get()),
-                incluir_ibscbs=self.v_ibscbs.get() == "Sim",
-                origem="manual",
+                incluir_ibscbs=incluir_ibscbs,
+                origem="manual", **ibscbs_campos,
             )
         except ErroAdge as e:
             ui.erro(self, "Não consegui adicionar", str(e))
@@ -398,7 +596,7 @@ class DialogoEmissao(Modal):
         self.v_obra_exterior.set(False)
         self._atualizar_obra_exterior()
         self.v_assist_tomador.set("(novo tomador)")
-        self.v_ibscbs.set("Não")
+        self._limpar_etapa_ibscbs()
         self.v_etapa_assistente.set("tomador")
         self._trocar_etapa_assistente()
         self._atualizar_previa()
@@ -503,8 +701,15 @@ class DialogoEmissao(Modal):
         for i, item in enumerate(self.itens):
             l = item.lancamento
             nome_perfil = next((p["nome"] for p in self.emissao_cfg.get("perfis", []) if p["id"] == item.perfil_id), "—")
-            situacao = STATUS_TEXTO[item.status] + (f" ({'; '.join(item.erros)})" if item.erros else "")
-            self.tv.insert("", "end", iid=str(i), tags=(item.status,),
+            transmissao_status = self._status_transmissao.get(l.id)
+            if transmissao_status is not None:
+                sucesso, msg = transmissao_status
+                situacao = "Transmitido com sucesso" if sucesso else f"Erro: {msg}"
+                tag = "pronto" if sucesso else "precisa_perfil"
+            else:
+                situacao = STATUS_TEXTO[item.status] + (f" ({'; '.join(item.erros)})" if item.erros else "")
+                tag = item.status
+            self.tv.insert("", "end", iid=str(i), tags=(tag,),
                            values=(l.tomador_nome, l.tomador_documento, moeda(l.valor), l.competencia,
                                    nome_perfil, situacao))
 
@@ -544,11 +749,226 @@ class DialogoEmissao(Modal):
             previa.excluir(item)
         self._atualizar_previa()
 
+    def _abrir_historico(self):
+        DialogoHistoricoEmissao(self, self.store, self.emp)
+
     def _transmitir(self):
-        ui.avisar(self, "Transmissão ainda não disponível",
-                 "O envio de verdade (assinatura e POST /nfse) ainda não foi implementado nesta "
-                 "versão - está aguardando a pesquisa oficial da API. A prévia já está pronta para "
-                 "quando essa parte for concluída.")
+        prontos = previa.prontos_para_transmitir(self.itens)
+        if not prontos:
+            ui.avisar(self, "Nada para transmitir", "Nenhuma nota está pronta (confira perfil/erros na prévia).")
+            return
+        pfx = self.emp.get("pfx", "")
+        if not Path(pfx).is_file():
+            ui.erro(self, "Sem certificado", "Esta empresa não tem um certificado A1 (.pfx) cadastrado.")
+            return
+        senha = self.store.senha_da_empresa(self.emp)
+        if not senha:
+            senha = ui.pedir_texto(self, "Senha do certificado", f"Digite a senha do certificado de {self.emp['nome']}:", oculto=True)
+            if senha is None:
+                return
+        ambiente = transmissao.ambiente_ativo()
+        aviso_amb = ("PRODUÇÃO REAL" if ambiente == transmissao.TP_AMB_PRODUCAO else "HOMOLOGAÇÃO/produção restrita")
+        if not ui.perguntar(self, "Confirmar transmissão",
+                             f"Vou transmitir {len(prontos)} nota(s) em {aviso_amb}, uma de cada vez, "
+                             "mostrando o resumo antes de cada envio. Continuar?"):
+            return
+        try:
+            sessao = core.sessao_com_certificado(pfx, senha)
+        except ErroAdge as e:
+            ui.erro(self, "Certificado recusado", str(e))
+            return
+        for item in prontos:
+            self._transmitir_um(item, sessao, ambiente)
+        self._atualizar_previa()
+
+    def _transmitir_um(self, item, sessao, ambiente: str):
+        lanc = item.lancamento
+        perfil = es.perfil_por_id(self.emissao_cfg, item.perfil_id)
+        try:
+            campos = dps.montar_campos(self.emp, self.emissao_cfg, perfil, item.tomador, lanc)
+        except ErroAdge as e:
+            self._status_transmissao[lanc.id] = (False, str(e))
+            return
+        if not DialogoConferenciaNota.perguntar(self, campos):
+            return  # "Corrigir": pula esta nota, segue pras próximas
+        serie = "1"
+        numero = historico.proximo_numero_dps(self.store.pasta, self.emp["id"], serie)
+        try:
+            xml = dps.montar_xml(campos, serie=serie, numero=numero, ambiente=ambiente)
+            xml_assinado = assinatura.assinar_dps(xml, self.emp["pfx"], self.store.senha_da_empresa(self.emp) or "")
+        except ErroAdge as e:
+            self._status_transmissao[lanc.id] = (False, str(e))
+            return
+        resultado = transmissao.enviar(xml_assinado, sessao, tp_amb=ambiente)
+        registro = {
+            "lancamento_id": lanc.id, "competencia": lanc.competencia, "tomador_nome": lanc.tomador_nome,
+            "tomador_documento": lanc.tomador_documento, "valor": lanc.valor,
+            "status": "emitida" if resultado.sucesso else "pendente",
+            "numero": numero, "serie": serie, "chave": resultado.chave, "erro": resultado.erro,
+            "data_hora": dt.datetime.now().isoformat(timespec="seconds"),
+        }
+        historico.registrar(self.store.pasta, self.emp["id"], registro)
+        if not resultado.sucesso:
+            self._status_transmissao[lanc.id] = (False, resultado.erro)
+            return
+        try:
+            caminho, _ = arquivo.salvar_xml_emitido(self.emp, lanc, resultado.xml_retorno,
+                                                     numero=resultado.numero, chave=resultado.chave)
+        except Exception as e:
+            self._status_transmissao[lanc.id] = (True, f"Transmitida, mas não consegui salvar o XML: {e}")
+            return
+        self._status_transmissao[lanc.id] = (True, "")
+
+
+def _resumo_conferencia(campos: dict) -> str:
+    """Texto de conferência de uma nota antes de transmitir — tudo que vai na DPS, parecido com o
+    resumo do portal antes de emitir (pedido explícito do Abner)."""
+    p, t, s, v = campos["prestador"], campos["tomador"], campos["servico"], campos["valores"]
+    linhas = [
+        "PRESTADOR", f"  {p['nome']} — {p['cnpj']}", "",
+        "TOMADOR", f"  {t['nome'] or '(sem nome)'} — {t['documento'] or t.get('nif') or '(sem documento)'}",
+    ]
+    end_t = t.get("endereco") or {}
+    if end_t.get("logradouro"):
+        linhas.append(f"  Endereço: {end_t.get('logradouro')}, {end_t.get('numero', '')} - {end_t.get('municipio', '')}/{end_t.get('uf', '')}")
+    linhas += ["", "SERVIÇO", f"  CTN: {s['ctn']}", f"  NBS: {s['nbs'] or '—'}",
+               f"  Descrição: {campos['descricao'] or '(padrão)'}", "",
+               "VALORES", f"  Valor do serviço: {moeda(v['valor_servico'])}"]
+    if v.get("desconto_incondicionado"):
+        linhas.append(f"  Desconto incondicionado: {moeda(v['desconto_incondicionado'])}")
+    if v.get("desconto_condicionado"):
+        linhas.append(f"  Desconto condicionado: {moeda(v['desconto_condicionado'])}")
+    issqn = s["issqn"]
+    linhas.append(f"  ISSQN: {es.TRIB_ISSQN.get(issqn.get('trib_issqn'), '—')} / {es.TP_RET_ISSQN.get(issqn.get('tp_ret_issqn'), '—')}")
+    pc = v.get("pis_cofins")
+    if pc:
+        linhas.append(f"  PIS: {moeda(pc['valor_pis'])} ({pc['aliquota_pis']}%) — COFINS: {moeda(pc['valor_cofins'])} ({pc['aliquota_cofins']}%)")
+    for campo, rotulo_v in (("retencao_cp", "Retenção CP/INSS"), ("retencao_irrf", "Retenção IRRF"), ("retencao_csll_outros", "Retenção CSLL")):
+        if v.get(campo):
+            linhas.append(f"  {rotulo_v}: {moeda(v[campo])}")
+    ibscbs = campos.get("ibscbs")
+    if ibscbs:
+        linhas += ["", "IBS/CBS", f"  CST: {ibscbs['cst']} — cClassTrib: {ibscbs['cclasstrib']}"]
+        info = do.info_legal_cclasstrib(ibscbs["cclasstrib"])
+        if info.get("p_red_ibs") or info.get("p_red_cbs"):
+            linhas.append(f"  Redução oficial: IBS {info.get('p_red_ibs', 0)}% / CBS {info.get('p_red_cbs', 0)}%")
+        if ibscbs.get("imovel"):
+            linhas.append(f"  Operação com imóvel (município IBGE {ibscbs['imovel']['cmun']})")
+        if ibscbs.get("dest"):
+            linhas.append(f"  Destinatário diferente do tomador: {ibscbs['dest'].get('nome')}")
+    return "\n".join(linhas)
+
+
+class DialogoConferenciaNota(Modal):
+    """Resumo de uma nota antes de transmitir, uma por vez — "Corrigir" pula esta nota (sem
+    transmitir), "Confirmar e transmitir" segue com o envio."""
+
+    def __init__(self, pai, campos: dict):
+        super().__init__(pai, "Conferir antes de transmitir", largura=560, altura=560)
+        self.resposta = False
+        self.resizable(True, True)
+        rolagem = Rolavel(self)
+        rolagem.pack(fill="both", expand=True)
+        texto = tk.Text(rolagem.corpo, wrap="word", height=22, width=62, bg=P.superficie, fg=P.texto,
+                        font=F(10), relief="flat", borderwidth=0)
+        texto.insert("1.0", _resumo_conferencia(campos))
+        texto.configure(state="disabled")
+        texto.pack(fill="both", expand=True)
+        rodape = tk.Frame(self, bg=P.fundo)
+        rodape.pack(fill="x", pady=(10, 0))
+        Botao(rodape, "Corrigir", self._corrigir).pack(side="right")
+        Botao(rodape, "Confirmar e transmitir", self._confirmar, estilo="primario").pack(side="right", padx=(0, 8))
+        self.bind("<Escape>", lambda *_: self._corrigir())
+        self.mostrar()
+
+    def _confirmar(self):
+        self.resposta = True
+        self.destroy()
+
+    def _corrigir(self):
+        self.resposta = False
+        self.destroy()
+
+    @classmethod
+    def perguntar(cls, pai, campos: dict) -> bool:
+        d = cls(pai, campos)
+        d.wait_window()
+        return d.resposta
+
+
+class DialogoHistoricoEmissao(Modal):
+    """Lista as notas já emitidas por esta empresa (`historico.listar`) e permite cancelar uma de
+    cada vez (evento e101101) — "qualquer coisa é só cancelar a nota" (Abner)."""
+
+    def __init__(self, pai, store: Armazenamento, emp: dict):
+        super().__init__(pai, "Notas emitidas", largura=760, altura=520)
+        self.store, self.emp = store, emp
+        self.resizable(True, True)
+        ui.titulo(self, "Notas emitidas", "Notas transmitidas com sucesso por esta empresa. Cancelar é irreversível.").pack(
+            anchor="w", pady=(0, 10))
+        corpo = tk.Frame(self, bg=P.fundo)
+        corpo.pack(fill="both", expand=True)
+        cols = ("data", "tomador", "valor", "numero", "chave", "status")
+        self.tv = ttk.Treeview(corpo, columns=cols, show="headings", height=14, selectmode="browse")
+        for c, t, w in (("data", "Data", 130), ("tomador", "Tomador", 180), ("valor", "Valor", 90),
+                        ("numero", "Número", 70), ("chave", "Chave", 160), ("status", "Status", 110)):
+            self.tv.heading(c, text=t)
+            self.tv.column(c, width=px(w), anchor="w")
+        self.tv.pack(side="left", fill="both", expand=True)
+        rodape = tk.Frame(self, bg=P.fundo)
+        rodape.pack(fill="x", pady=(10, 0))
+        Botao(rodape, "Fechar", self.destroy).pack(side="right")
+        Botao(rodape, "Cancelar nota selecionada", self._cancelar, estilo="perigo").pack(side="right", padx=(0, 8))
+        self._registros = []
+        self._carregar()
+        self.bind("<Escape>", lambda *_: self.destroy())
+        self.mostrar()
+
+    def _carregar(self):
+        self.tv.delete(*self.tv.get_children())
+        self._registros = [r for r in historico.listar(self.store.pasta, self.emp["id"]) if r.get("status") == "emitida"]
+        for i, r in enumerate(self._registros):
+            self.tv.insert("", "end", iid=str(i), values=(
+                r.get("data_hora", "")[:16].replace("T", " "), r.get("tomador_nome", ""),
+                moeda(r.get("valor", 0.0)), r.get("numero", ""), r.get("chave", ""), "Emitida"))
+
+    def _cancelar(self):
+        sel = self.tv.selection()
+        if not sel:
+            ui.avisar(self, "Nada selecionado", "Selecione uma nota na lista primeiro.")
+            return
+        registro = self._registros[int(sel[0])]
+        motivo_nome = ui.pedir_texto(self, "Motivo do cancelamento",
+                                     "Por que esta nota está sendo cancelada? (mín. 15 caracteres)")
+        if motivo_nome is None or len(motivo_nome.strip()) < 15:
+            if motivo_nome is not None:
+                ui.erro(self, "Motivo muito curto", "O motivo precisa ter pelo menos 15 caracteres.")
+            return
+        if not ui.perguntar(self, "Cancelar esta nota?",
+                             f"A NFS-e nº {registro.get('numero')} será cancelada. Isso não pode ser desfeito.",
+                             sim="Cancelar nota", perigo=True):
+            return
+        pfx = self.emp.get("pfx", "")
+        senha = self.store.senha_da_empresa(self.emp) or ui.pedir_texto(
+            self, "Senha do certificado", f"Digite a senha do certificado de {self.emp['nome']}:", oculto=True)
+        if not senha:
+            return
+        try:
+            sessao = core.sessao_com_certificado(pfx, senha)
+            xml = eventos.montar_cancelamento_xml(registro["chave"], self.emp.get("cnpj", ""), "1", motivo_nome.strip())
+            xml_assinado = assinatura.assinar_pedido_evento(xml, pfx, senha)
+        except ErroAdge as e:
+            ui.erro(self, "Não consegui cancelar", str(e))
+            return
+        resultado = transmissao.cancelar(xml_assinado, registro["chave"], sessao, tp_amb=transmissao.ambiente_ativo())
+        if not resultado.sucesso:
+            ui.erro(self, "Sefin Nacional recusou o cancelamento", resultado.erro)
+            return
+        registro_cancel = dict(registro)
+        registro_cancel.update({"status": "cancelada", "data_hora": dt.datetime.now().isoformat(timespec="seconds")})
+        historico.registrar(self.store.pasta, self.emp["id"], registro_cancel)
+        ui.informar(self, "Cancelada", "Nota cancelada com sucesso.")
+        self._carregar()
 
 
 class DialogoMapeamentoColunas(Modal):

@@ -3,6 +3,7 @@
 Grava em `empresa["emissao"]` (ver `config_schema.py`). Não mexe na busca/download de notas nem em
 `empresa["fiscal"]` (simulação de regimes), que são outras telas.
 """
+import re
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
@@ -386,6 +387,8 @@ class DialogoTomador(Modal):
         e = t["endereco"]
         self.v_nome = tk.StringVar(value=t["nome"])
         self.v_doc = tk.StringVar(value=t["documento"])
+        self.v_telefone = tk.StringVar(value=t.get("telefone", ""))
+        self.v_email = tk.StringVar(value=t.get("email", ""))
         self.v_identificacao = tk.StringVar(value=es.TOMADOR_IDENTIFICACAO_MODOS[t["modo_identificacao"]])
         self.v_cep = tk.StringVar(value=e["cep"])
         self.v_logradouro = tk.StringVar(value=e["logradouro"])
@@ -407,8 +410,12 @@ class DialogoTomador(Modal):
         cartao.pack(fill="x")
         g = cartao.corpo
         g.columnconfigure(0, weight=1)
+        g.columnconfigure(1, weight=1)
         campo_rotulado(g, 0, "Nome", Campo(g, self.v_nome, largura=40))
-        r = campo_rotulado(g, 3, "CPF ou CNPJ", Campo(g, self.v_doc, largura=22))
+        campo_rotulado(g, 3, "CPF ou CNPJ", Campo(g, self.v_doc, largura=22), col=0, columnspan=1)
+        r = campo_rotulado(g, 3, "Telefone (opcional)", Campo(g, self.v_telefone, largura=18), col=1, columnspan=1)
+        campo_rotulado(g, r, "E-mail (opcional)", Campo(g, self.v_email, largura=40))
+        r += 3
         rotulo(g, "Como identificar este tomador na nota", 9, "bold", "suave").grid(row=r, column=0, sticky="w", pady=(10, 3))
         ttk.Combobox(g, textvariable=self.v_identificacao, values=list(es.TOMADOR_IDENTIFICACAO_MODOS.values()),
                     state="readonly", width=48, font=F(10)).grid(row=r + 1, column=0, sticky="ew")
@@ -509,6 +516,7 @@ class DialogoTomador(Modal):
             return
         self.tomador.update({
             "nome": nome, "documento": doc, "modo_identificacao": modo, "endereco": endereco, "ativo": self.v_ativo.get(),
+            "telefone": re.sub(r"\D", "", self.v_telefone.get()), "email": self.v_email.get().strip(),
             "perfil_id": self._id_por_nome.get(self.v_perfil.get()),
             "descricao": {"modo": self.v_desc_modo.get(), "texto": self.caixa_desc.texto.get("1.0", "end-1c")},
             "informacoes_complementares": {"modo": self.v_info_modo.get(), "texto": self.caixa_info.texto.get("1.0", "end-1c")},
@@ -609,6 +617,8 @@ class DialogoConfiguracaoEmissao(Modal):
         corpo = f.corpo
         cfg = self.cfg
         self.v_regime = tk.StringVar(value=es.REGIMES.get(cfg["regime"], es.REGIMES["simples"]))
+        self.v_reg_esp = tk.StringVar(
+            value=es.REGIME_ESPECIAL_TRIBUTACAO.get(cfg.get("regime_especial_tributacao", 0), es.REGIME_ESPECIAL_TRIBUTACAO[0]))
         self.v_im = tk.StringVar(value=cfg["inscricao_municipal"])
         self.v_municipio = tk.StringVar(value=cfg["municipio"])
         self.v_uf = tk.StringVar(value=cfg["uf"])
@@ -628,9 +638,12 @@ class DialogoConfiguracaoEmissao(Modal):
         g = cartao.corpo
         g.columnconfigure(0, weight=1)
         g.columnconfigure(1, weight=1)
-        rotulo(g, "Regime tributário", 9, "bold", "suave").grid(row=0, column=0, sticky="w", pady=(0, 3), columnspan=2)
-        ttk.Combobox(g, textvariable=self.v_regime, values=list(es.REGIMES.values()), state="readonly", width=26, font=F(10)).grid(
-            row=1, column=0, sticky="w", columnspan=2, pady=(0, 10))
+        rotulo(g, "Regime tributário", 9, "bold", "suave").grid(row=0, column=0, sticky="w", pady=(0, 3))
+        rotulo(g, "Regime especial de tributação — opcional", 9, "bold", "suave").grid(row=0, column=1, sticky="w", pady=(0, 3))
+        ttk.Combobox(g, textvariable=self.v_regime, values=list(es.REGIMES.values()), state="readonly", width=24, font=F(10)).grid(
+            row=1, column=0, sticky="w", pady=(0, 10))
+        ttk.Combobox(g, textvariable=self.v_reg_esp, values=list(es.REGIME_ESPECIAL_TRIBUTACAO.values()), state="readonly",
+                    width=24, font=F(10)).grid(row=1, column=1, sticky="w", pady=(0, 10))
         campo_rotulado(g, 2, "Inscrição Municipal (IM) — opcional", Campo(g, self.v_im, largura=22), col=0, columnspan=1)
         campo_rotulado(g, 2, "Município e UF do prestador", self._linha_municipio(g), col=1, columnspan=1)
         self.f_simples = tk.Frame(g, bg=P.superficie)
@@ -903,8 +916,10 @@ class DialogoConfiguracaoEmissao(Modal):
             self._trocar_aba()
             return
         nome_para_identificacao = {v: k for k, v in es.MODOS_IDENTIFICACAO.items()}
+        nome_para_reg_esp = {v: k for k, v in es.REGIME_ESPECIAL_TRIBUTACAO.items()}
         self.cfg.update({
-            "regime": self._regime_chave(), "inscricao_municipal": im, "municipio": municipio,
+            "regime": self._regime_chave(), "regime_especial_tributacao": nome_para_reg_esp.get(self.v_reg_esp.get(), 0),
+            "inscricao_municipal": im, "municipio": municipio,
             "uf": self.v_uf.get().strip().upper(), "codigo_municipio_ibge": self.v_cod_ibge.get().strip(),
             "endereco": {"cep": self.v_end_cep.get().strip(), "logradouro": self.v_end_logradouro.get().strip(),
                         "numero": self.v_end_numero.get().strip(), "complemento": self.v_end_complemento.get().strip(),

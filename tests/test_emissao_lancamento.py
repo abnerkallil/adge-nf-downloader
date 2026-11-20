@@ -48,7 +48,7 @@ class Validacao(unittest.TestCase):
         l = Lancamento(valor=100.0, competencia="11/2026")
         erros = l.validar()
         self.assertIn("Tomador sem nome", erros)
-        self.assertIn("Documento do tomador inválido (precisa de CPF ou CNPJ)", erros)
+        self.assertIn("Documento do tomador inválido (precisa de CPF, CNPJ, NIF ou motivo de ausência de NIF)", erros)
         self.assertIn("Competência inválida (use AAAA-MM)", erros)
 
 

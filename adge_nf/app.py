@@ -20,7 +20,7 @@ from .dialogos import (PREF_BOAS_VINDAS, TEXTOS_MISSAO, DialogoAtualizacao, Dial
 from .emissao import config_schema
 from .emissao.ui_configuracao import DialogoConfiguracaoEmissao
 from .store import Armazenamento
-from .ui import P, Botao, Cartao, Chip, Interruptor, Rolavel, F, px, rotulo
+from .ui import P, Botao, Campo, Cartao, Chip, Interruptor, Rolavel, F, px, rotulo
 
 formatar_cnpj = ui.formatar_cnpj
 ACOES = {"ambos": "Calcular + baixar", "calcular": "Só calcular", "baixar": "Só baixar"}
@@ -219,10 +219,20 @@ class App(tk.Tk):
     def _pagina_empresas(self):
         f = tk.Frame(self.conteudo, bg=P.fundo)
         self.paginas["empresas"] = f
+        self.v_busca_empresas = tk.StringVar()
+        self.v_busca_empresas.trace_add("write", lambda *_: self._atualizar_lista())
+
+        def _acao(cab):
+            linha = tk.Frame(cab, bg=P.fundo)
+            rotulo(linha, "Pesquisar:", 9, cor="suave").pack(side="left", padx=(0, 6))
+            Campo(linha, self.v_busca_empresas, largura=18).pack(side="left", padx=(0, 10))
+            Botao(linha, "+  Adicionar empresa", self._adicionar, estilo="primario", tam=10).pack(side="left")
+            return linha
+
         self._cabecalho_pagina(
             f, "Empresas salvas",
             "Escolha uma empresa e clique em Buscar. O certificado e a senha ficam guardados só neste computador.",
-            lambda cab: Botao(cab, "+  Adicionar empresa", self._adicionar, estilo="primario", tam=10))
+            _acao)
         self.rolagem = Rolavel(f)
         self.rolagem.pack(fill="both", expand=True, padx=(px(32), px(24)), pady=(0, px(16)))
         self.f_cards = tk.Frame(self.rolagem.corpo, bg=P.fundo)
@@ -254,10 +264,21 @@ class App(tk.Tk):
         if not self.store.empresas:
             self._vazio()
             return
-        for e in self.store.empresas:
+        busca = (self.v_busca_empresas.get() if hasattr(self, "v_busca_empresas") else "").strip().lower()
+        empresas = [e for e in self.store.empresas if busca in e["nome"].lower()] if busca else self.store.empresas
+        if not empresas:
+            self._sem_resultado_busca()
+            return
+        for e in empresas:
             self._cartoes.append((e["id"], self._cartao_empresa(e)))
         self._pintar_selecao()
         self._layout_cartoes()
+
+    def _sem_resultado_busca(self):
+        c = Cartao(self.f_cards, pad=28)
+        c.pack(fill="x", pady=(px(20), 0))
+        rotulo(c.corpo, "Nenhuma empresa encontrada", 15, "bold", "verde_escuro").pack(anchor="w")
+        rotulo(c.corpo, "Nenhum nome bate com essa pesquisa.", 10, cor="suave").pack(anchor="w", pady=(6, 0))
 
     def _vazio(self):
         c = Cartao(self.f_cards, pad=28)

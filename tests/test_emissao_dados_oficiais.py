@@ -74,6 +74,30 @@ class MunicipiosIbge(unittest.TestCase):
         self.assertIsNone(do.municipio_por_texto_formatado("Isso não é um município - XX"))
 
 
+class MoedasIso4217(unittest.TestCase):
+    def test_busca_por_nome_em_portugues(self):
+        achados = do.buscar_moeda("dolar americano")
+        self.assertTrue(any(a.startswith("840 -") for a in achados))
+
+    def test_busca_pelo_codigo_iso(self):
+        achados = do.buscar_moeda("USD")
+        self.assertTrue(any(a.startswith("840 -") for a in achados))
+
+    def test_busca_pelo_codigo_numerico(self):
+        achados = do.buscar_moeda("840")
+        self.assertTrue(any("USD" in a for a in achados))
+
+    def test_resolve_texto_formatado_para_o_registro(self):
+        achados = do.buscar_moeda("840")
+        reg = do.moeda_por_texto_formatado(achados[0])
+        self.assertIsNotNone(reg)
+        self.assertEqual(reg["codigo_numerico"], "840")
+        self.assertEqual(reg["codigo_iso"], "USD")
+
+    def test_busca_vazia_nao_devolve_a_lista_inteira(self):
+        self.assertEqual(do.buscar_moeda(""), [])
+
+
 class AlertaRegime(unittest.TestCase):
     def test_sem_pista_nenhuma_nao_avisa(self):
         # 99.01.01 é o "sem incidência" genérico: não tem cod_ativ_sn associado no Anexo VIII.

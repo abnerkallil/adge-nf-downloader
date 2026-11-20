@@ -53,6 +53,19 @@ REGIMES = {
     "real": "Lucro Real",
 }
 
+REGIME_ESPECIAL_TRIBUTACAO = {
+    0: "Nenhum",
+    1: "Ato Cooperado (Cooperativa)",
+    2: "Estimativa",
+    3: "Microempresa Municipal",
+    4: "Notário ou Registrador",
+    5: "Profissional Autônomo",
+    6: "Sociedade de Profissionais",
+    9: "Outros",
+}
+"""`prest/regTrib/regEspTrib` (leiaute oficial, `TSRegEspTrib`) — 0 é o padrão (nenhum regime
+especial); os demais só se aplicam a empresas que realmente se encaixam nessas categorias."""
+
 CST_PISCOFINS_VALIDOS = frozenset((
     "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "49", "50", "51", "52", "53", "54", "55", "56",
     "60", "61", "62", "63", "64", "65", "66", "67", "70", "71", "72", "73", "74", "75", "98", "99",
@@ -86,6 +99,25 @@ MODOS_IDENTIFICACAO = {
     "endereco": "Documento e endereço completo (precisa constar na nota, ex.: locação de imóvel)",
 }
 TOMADOR_IDENTIFICACAO_MODOS = {"herdar": "Usar o padrão da empresa", **MODOS_IDENTIFICACAO}
+
+MOTIVOS_SUBSTITUICAO = {
+    "01": "Desenquadramento de NFS-e do Simples Nacional",
+    "02": "Enquadramento de NFS-e no Simples Nacional",
+    "03": "Inclusão Retroativa de Imunidade/Isenção para NFS-e",
+    "04": "Exclusão Retroativa de Imunidade/Isenção para NFS-e",
+    "05": "Rejeição de NFS-e pelo tomador ou pelo intermediário se responsável pelo recolhimento do tributo",
+    "99": "Outros",
+}
+"""`infoDPS/subst/cMotivo` (leiaute oficial, `TSCodJustSubst`) — só usado quando esta nota
+substitui uma NFS-e anterior (chave de 50 dígitos em `subst/chSubstda`)."""
+
+NIF_MOTIVOS = {
+    "0": "Não informado na nota de origem",
+    "1": "Dispensado do NIF",
+    "2": "Não exigência do NIF",
+}
+"""`toma/cNaoNIF` (leiaute oficial, `TSCodNaoNIF`) — só usado quando o tomador é estrangeiro, não
+tem CPF/CNPJ nem NIF, e algum desses motivos justifica a ausência."""
 
 MARCADORES = ("{MES}", "{ANO}")
 
@@ -160,6 +192,8 @@ def tomador_padrao(nome: str = "") -> dict:
     return {
         "id": _id("tomador"), "nome": nome, "documento": "",
         "modo_identificacao": "herdar", "endereco": endereco_padrao(), "endereco_livre": "",
+        "telefone": "", "email": "",
+        "nif": "", "motivo_sem_nif": "",  # tomador estrangeiro sem CPF/CNPJ (raro) — ver NIF_MOTIVOS
         "perfil_id": None,
         "descricao": {"modo": "herdar", "texto": ""},
         "informacoes_complementares": {"modo": "herdar", "texto": ""},
@@ -171,7 +205,7 @@ def configuracao_padrao() -> dict:
     perfil = perfil_padrao("Padrão")
     return {
         "versao": VERSAO_ATUAL,
-        "regime": "simples",
+        "regime": "simples", "regime_especial_tributacao": 0,
         "inscricao_municipal": "", "municipio": "", "uf": "", "codigo_municipio_ibge": "",
         "endereco": endereco_rua_padrao(),
         "simples": {"aliquota_mes": 0.0},

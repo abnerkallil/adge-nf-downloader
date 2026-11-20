@@ -164,6 +164,56 @@ def municipio_por_texto_formatado(texto_formatado: str) -> dict | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _moedas() -> list[dict]:
+    """Tabela oficial ISO 4217 (código alfabético, código numérico de 3 dígitos e nome), baixada
+    em 19/11/2026 de `cdn.jsdelivr.net/npm/currency-codes` (fonte: iso-4217-list-one.xml, publicação
+    2024-06-25 do site oficial do ISO 4217) — é o código numérico que `serv/comExt/tpMoeda` exige
+    (confirmado: USD=840, EUR=978, BRL=986, não é a tabela de câmbio do Banco Central)."""
+    with open(_PASTA_DADOS / "moedas_iso4217.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+_NOMES_MOEDA_PT = {
+    "USD": "Dólar americano", "EUR": "Euro", "GBP": "Libra esterlina", "JPY": "Iene",
+    "ARS": "Peso argentino", "CAD": "Dólar canadense", "AUD": "Dólar australiano",
+    "CHF": "Franco suíço", "CNY": "Yuan chinês", "MXN": "Peso mexicano", "UYU": "Peso uruguaio",
+    "PYG": "Guarani paraguaio", "CLP": "Peso chileno", "BOB": "Boliviano", "BRL": "Real",
+    "NZD": "Dólar neozelandês",
+}
+
+
+def formatar_moeda(registro: dict) -> str:
+    nome_pt = _NOMES_MOEDA_PT.get(registro["codigo_iso"])
+    nome = f"{nome_pt} ({registro['codigo_iso']})" if nome_pt else f"{registro['nome']} ({registro['codigo_iso']})"
+    return f"{registro['codigo_numerico']} - {nome}"
+
+
+def buscar_moeda(texto: str, limite: int = 30) -> list[str]:
+    """Moeda por nome em português (quando traduzido) ou inglês, pelo código ISO de letras (ex.
+    "USD") ou pelo código numérico (ex. "840") — o que vai de fato na nota é o numérico."""
+    alvo = _normalizar_busca(texto)
+    if not alvo:
+        return []
+    achados = [
+        r for r in _moedas()
+        if alvo in _normalizar_busca(_NOMES_MOEDA_PT.get(r["codigo_iso"], ""))
+        or alvo in _normalizar_busca(r["nome"])
+        or alvo in _normalizar_busca(r["codigo_iso"])
+        or alvo in r["codigo_numerico"]
+    ]
+    return [formatar_moeda(r) for r in achados[:limite]]
+
+
+def moeda_por_texto_formatado(texto_formatado: str) -> dict | None:
+    """Acha o registro a partir do texto "código - nome (ISO)" que o combo de busca devolve."""
+    alvo = _normalizar_busca(texto_formatado or "")
+    for r in _moedas():
+        if _normalizar_busca(formatar_moeda(r)) == alvo:
+            return r
+    return None
+
+
 def alerta_ctn_regime(texto_ou_codigo_ctn: str, regime: str) -> str:
     """Aviso próprio do ADGE (não é rejeição do leiaute): quando o CTN escolhido costuma
     aparecer associado a um Anexo do Simples Nacional (ou é impeditivo ao Simples) e a

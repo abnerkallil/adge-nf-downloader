@@ -9,7 +9,9 @@ from adge_nf.emissao import config_schema as es
 from adge_nf.emissao import tomadores_planilha as tp
 
 
-def _escrever(caminho, linhas):
+def _escrever(caminho, linhas: list):
+    """`linhas`: lista de dicts {nome_da_coluna: valor}; colunas omitidas ficam em branco.
+    Independente de pedir pra robustez contra reordenar/adicionar colunas no motor."""
     import openpyxl
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -17,8 +19,9 @@ def _escrever(caminho, linhas):
     for i, nome in enumerate(tp.COLUNAS, 1):
         ws.cell(1, i, nome)
     for r, linha in enumerate(linhas, 2):
-        for i, v in enumerate(linha, 1):
-            ws.cell(r, i, v)
+        for i, nome_col in enumerate(tp.COLUNAS, 1):
+            if nome_col in linha:
+                ws.cell(r, i, linha[nome_col])
     wb.save(caminho)
 
 
@@ -41,24 +44,38 @@ class GerarModelo(unittest.TestCase):
             self.assertEqual(erros, [])
             self.assertEqual(len(tomadores), 1)
             self.assertEqual(tomadores[0]["nome"], "Fulano de Tal")
+            self.assertEqual(tomadores[0]["telefone"], "43999999999")
+            self.assertEqual(tomadores[0]["email"], "fulano@exemplo.com.br")
 
 
 class ImportarXlsx(unittest.TestCase):
     def test_so_com_nome_e_documento_importa(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            _escrever(caminho, [["Maria", "123.456.789-01", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]])
+            _escrever(caminho, [{"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(erros, [])
             self.assertEqual(len(tomadores), 1)
             self.assertEqual(tomadores[0]["documento"], "123.456.789-01")
             self.assertTrue(tomadores[0]["ativo"])
+            self.assertEqual(tomadores[0]["telefone"], "")
+            self.assertEqual(tomadores[0]["email"], "")
             self.assertEqual(tomadores[0]["descricao"], {"modo": "herdar", "texto": ""})
+
+    def test_telefone_e_email_importados(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            caminho = pathlib.Path(tmp) / "t.xlsx"
+            _escrever(caminho, [{"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01",
+                                 "Telefone (opcional)": "(43) 99999-9999", "E-mail (opcional)": "maria@exemplo.com"}])
+            tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
+            self.assertEqual(erros, [])
+            self.assertEqual(tomadores[0]["telefone"], "43999999999")
+            self.assertEqual(tomadores[0]["email"], "maria@exemplo.com")
 
     def test_sem_nome_e_ignorada_com_erro(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            _escrever(caminho, [["", "123.456.789-01"] + [""] * 14])
+            _escrever(caminho, [{"Documento (CPF ou CNPJ)": "123.456.789-01"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(tomadores, [])
             self.assertEqual(len(erros), 1)
@@ -67,7 +84,7 @@ class ImportarXlsx(unittest.TestCase):
     def test_sem_documento_e_sem_endereco_e_ignorada_com_erro(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            _escrever(caminho, [["Maria", ""] + [""] * 14])
+            _escrever(caminho, [{"Nome": "Maria"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(tomadores, [])
             self.assertEqual(len(erros), 1)
@@ -75,8 +92,8 @@ class ImportarXlsx(unittest.TestCase):
     def test_identificacao_endereco_sem_endereco_e_ignorada(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            linha = ["Maria", "123.456.789-01", "Documento e endereço completo"] + [""] * 13
-            _escrever(caminho, [linha])
+            _escrever(caminho, [{"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01",
+                                 "Identificação na nota": "Documento e endereço completo"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(tomadores, [])
             self.assertEqual(len(erros), 1)
@@ -85,9 +102,10 @@ class ImportarXlsx(unittest.TestCase):
     def test_identificacao_endereco_com_endereco_importa(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            linha = ["Maria", "", "Documento e endereço completo", "", "86010000", "Rua das Flores",
-                     "100", "", "Centro", "Londrina", "PR", "4113700", "", "", "", ""]
-            _escrever(caminho, [linha])
+            _escrever(caminho, [{"Nome": "Maria", "Identificação na nota": "Documento e endereço completo",
+                                 "CEP": "86010000", "Logradouro": "Rua das Flores", "Número": "100",
+                                 "Bairro": "Centro", "Município": "Londrina", "UF": "PR",
+                                 "Código IBGE do município": "4113700"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(erros, [])
             self.assertEqual(len(tomadores), 1)
@@ -98,8 +116,8 @@ class ImportarXlsx(unittest.TestCase):
         perfil = es.perfil_padrao("Locação residencial")
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            linha = ["Maria", "123.456.789-01", "", "Locação residencial"] + [""] * 12
-            _escrever(caminho, [linha])
+            _escrever(caminho, [{"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01",
+                                 "Perfil de serviço (nome, opcional)": "Locação residencial"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[perfil])
             self.assertEqual(erros, [])
             self.assertEqual(tomadores[0]["perfil_id"], perfil["id"])
@@ -107,8 +125,8 @@ class ImportarXlsx(unittest.TestCase):
     def test_perfil_nao_encontrado_avisa_mas_importa(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            linha = ["Maria", "123.456.789-01", "", "Perfil Inexistente"] + [""] * 12
-            _escrever(caminho, [linha])
+            _escrever(caminho, [{"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01",
+                                 "Perfil de serviço (nome, opcional)": "Perfil Inexistente"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(len(tomadores), 1)
             self.assertIsNone(tomadores[0]["perfil_id"])
@@ -118,15 +136,15 @@ class ImportarXlsx(unittest.TestCase):
     def test_ativo_nao_desativa_o_tomador(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            linha = ["Maria", "123.456.789-01"] + [""] * 13 + ["Não"]
-            _escrever(caminho, [linha])
+            _escrever(caminho, [{"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01",
+                                 "Ativo (Sim/Não)": "Não"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertFalse(tomadores[0]["ativo"])
 
     def test_linhas_em_branco_sao_ignoradas_sem_erro(self):
         with tempfile.TemporaryDirectory() as tmp:
             caminho = pathlib.Path(tmp) / "t.xlsx"
-            _escrever(caminho, [[""] * 16, ["Maria", "123.456.789-01"] + [""] * 14])
+            _escrever(caminho, [{}, {"Nome": "Maria", "Documento (CPF ou CNPJ)": "123.456.789-01"}])
             tomadores, erros = tp.importar_xlsx(caminho, perfis=[])
             self.assertEqual(erros, [])
             self.assertEqual(len(tomadores), 1)

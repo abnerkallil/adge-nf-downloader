@@ -6,12 +6,14 @@ falta só limita o que aquele tomador consegue fazer sozinho (ex.: sem documento
 casamento automático não encontra essa nota)."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..core import ErroAdge
 from . import config_schema as es
 
-COLUNAS = ["Nome", "Documento (CPF ou CNPJ)", "Identificação na nota", "Perfil de serviço (nome, opcional)",
+COLUNAS = ["Nome", "Documento (CPF ou CNPJ)", "Telefone (opcional)", "E-mail (opcional)",
+           "Identificação na nota", "Perfil de serviço (nome, opcional)",
            "CEP", "Logradouro", "Número", "Complemento", "Bairro", "Município", "UF",
            "Código IBGE do município", "Endereço (texto livre, opcional)",
            "Descrição para este tomador (opcional)", "Informações complementares (opcional)", "Ativo (Sim/Não)"]
@@ -23,7 +25,8 @@ _IDENTIFICACAO_PLANILHA = {
 }
 _PLANILHA_IDENTIFICACAO = {v: k for k, v in _IDENTIFICACAO_PLANILHA.items()}
 
-LINHA_EXEMPLO = ["Fulano de Tal", "123.456.789-01", _IDENTIFICACAO_PLANILHA["herdar"], "",
+LINHA_EXEMPLO = ["Fulano de Tal", "123.456.789-01", "(43) 99999-9999", "fulano@exemplo.com.br",
+                  _IDENTIFICACAO_PLANILHA["herdar"], "",
                   "86010-000", "Rua das Flores", "100", "", "Centro", "Londrina", "PR", "4113700",
                   "", "", "", "Sim"]
 
@@ -66,6 +69,8 @@ def _montar_instrucoes(ws, perfis: list):
         ("Nome", "Obrigatório. Nome do tomador (pessoa ou empresa)."),
         ("Documento (CPF ou CNPJ)", "Opcional, mas é preciso ter documento OU endereço completo "
                                       "(logradouro + município) preenchido — é por aí que a nota reconhece o tomador."),
+        ("Telefone (opcional)", "Opcional. Código DDD + número (ex.: 43999999999). Vai na nota (toma/fone) quando preenchido."),
+        ("E-mail (opcional)", "Opcional. Vai na nota (toma/email) quando preenchido."),
         ("Identificação na nota", "Opcional. \"Padrão da empresa\" (usa a regra geral da empresa), "
                                     "\"Só documento\" ou \"Documento e endereço completo\" (obriga logradouro e "
                                     "município nesta linha). Em branco = Padrão da empresa."),
@@ -139,6 +144,8 @@ def importar_xlsx(caminho, perfis: list, identificacao_padrao_empresa: str = "do
     idx = {
         "nome": col("nome"),
         "documento": col("documento (cpf ou cnpj)", "documento", "cpf/cnpj", "cpf ou cnpj"),
+        "telefone": col("telefone (opcional)", "telefone"),
+        "email": col("e-mail (opcional)", "e-mail", "email (opcional)", "email"),
         "identificacao": col("identificação na nota", "identificacao na nota", "identificação", "identificacao"),
         "perfil_nome": col("perfil de serviço (nome, opcional)", "perfil de serviço", "perfil de servico", "perfil"),
         "cep": col("cep"),
@@ -200,6 +207,8 @@ def importar_xlsx(caminho, perfis: list, identificacao_padrao_empresa: str = "do
         info_txt = _texto(celula(linha, "info"))
         tomador = {
             **es.tomador_padrao(nome), "documento": doc, "modo_identificacao": modo,
+            "telefone": re.sub(r"\D", "", _texto(celula(linha, "telefone"))),
+            "email": _texto(celula(linha, "email")),
             "endereco": endereco, "endereco_livre": _texto(celula(linha, "endereco_livre")),
             "perfil_id": perfil_id, "ativo": _ativo_de(celula(linha, "ativo")),
             "descricao": {"modo": "fixo", "texto": descricao_txt} if descricao_txt else {"modo": "herdar", "texto": ""},

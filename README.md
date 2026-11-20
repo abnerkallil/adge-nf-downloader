@@ -16,6 +16,7 @@ planilha Excel do período e oferece uma análise avançada com gráfico e compa
 - **Correção do gráfico** (v1.7.10): as fatias do gráfico passam a ser desenhadas sem sobreposição, mantendo a diferenciação entre todos os participantes.
 - **Emissão de NFS-e** (v2.0.0): configuração de emissão por empresa (regime, perfis de serviço, tomadores recorrentes), lançamento de notas (manual, planilha ou documento do cliente), prévia com casamento automático de tomador, e montagem, assinatura e envio da DPS ao Sefin Nacional. Transmissão em produção real fica travada por padrão até ser testada e liberada.
 - **Correções e novidades da emissão** (v2.0.1): Inscrição Municipal opcional, CST sugerido no PIS/COFINS Cumulativo, busca de CTN/NBS sem pontuação, município com código IBGE automático, perfil de serviço duplicável, importação de tomadores em lote por planilha, e visual do programa pelo BrandBook da Adge.
+- **Assistente de emissão e campos avançados da DPS** (v2.0.2): assistente passo a passo pra lançar notas (tomador, perfil, dados, IBS/CBS, revisão), telefone/e-mail do tomador, busca na aba Empresas, e suporte a regime especial de tributação, desconto, retenções, tomador estrangeiro, intermediário, substituição de NFS-e, obra/imóvel e exportação com moeda estrangeira.
 - Download dos XMLs de **serviços prestados** e **serviços tomados** de qualquer mês.
 - Totais do período: faturamento, serviços tomados e **saldo líquido** (prestado − tomado, antes dos impostos),
   em verde quando positivo e vermelho quando negativo.

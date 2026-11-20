@@ -65,3 +65,7 @@ Os testes (`tests/test_docs.py`) conferem o formato, os códigos e se existe rel
 | ITEM-45 | Duplicar perfil de serviço |
 | ITEM-46 | Importação de tomadores em lote por planilha |
 | ITEM-47 | Visual do programa pelo BrandBook da Adge |
+| ITEM-48 | Telefone e e-mail do tomador |
+| ITEM-49 | Busca na aba Empresas salvas |
+| ITEM-50 | Assistente passo a passo de emissão de notas |
+| ITEM-51 | Campos avançados da DPS |

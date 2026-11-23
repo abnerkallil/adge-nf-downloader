@@ -66,4 +66,7 @@ def _assinar(xml: str, pfx: str, senha: str, elemento_a_referenciar: str) -> str
         assinado = signer.sign(root, key=chave, cert=[cert], reference_uri=f"#{id_inf}")
     except Exception as e:
         raise ErroAdge(f"Falha ao assinar: {e}") from e
-    return etree.tostring(assinado, encoding="unicode")
+    # `encoding="unicode"` nunca inclui a declaração `<?xml version="1.0" encoding="UTF-8"?>` — a
+    # Sefin Nacional recusa isso (erro E1229), mesmo com o conteúdo já em UTF-8 correto. A
+    # declaração fica fora do que a assinatura cobre (C14N sempre a exclui), então isso não invalida nada.
+    return etree.tostring(assinado, xml_declaration=True, encoding="UTF-8").decode("utf-8")

@@ -257,7 +257,8 @@ def configuracao_padrao() -> dict:
     return {
         "versao": VERSAO_ATUAL,
         "regime": "simples", "regime_especial_tributacao": 0,
-        "inscricao_municipal": "", "municipio": "", "uf": "", "codigo_municipio_ibge": "",
+        "inscricao_municipal": "", "telefone": "", "email": "",
+        "municipio": "", "uf": "", "codigo_municipio_ibge": "",
         "endereco": endereco_rua_padrao(),
         "simples": {"aliquota_mes": 0.0},
         "identificacao_tomador_padrao": "documento",

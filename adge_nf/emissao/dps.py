@@ -108,6 +108,7 @@ def montar_campos(empresa: dict, empresa_emissao: dict, perfil: dict, tomador: d
             "regime": empresa_emissao.get("regime", ""),
             "regime_especial_tributacao": empresa_emissao.get("regime_especial_tributacao", 0),
             "endereco": dict(empresa_emissao.get("endereco") or {}),
+            "telefone": empresa_emissao.get("telefone", ""), "email": empresa_emissao.get("email", ""),
         },
         "tomador": {
             "nome": lancamento.tomador_nome, "documento": lancamento.tomador_documento,
@@ -282,6 +283,11 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     end_prest = prest.get("endereco") or {}
     if end_prest.get("logradouro"):
         _end_nacional(el_prest, end_prest, cod_mun)
+    fone_prest = _so_digitos(prest.get("telefone", ""))
+    if len(fone_prest) >= 6:
+        _sub(el_prest, "fone", fone_prest[:20])
+    if prest.get("email"):
+        _sub(el_prest, "email", prest["email"][:80])
     reg_trib = _sub(el_prest, "regTrib")
     _sub(reg_trib, "opSimpNac", _OP_SIMP_NAC.get(prest["regime"], "1"))
     _sub(reg_trib, "regEspTrib", str(prest.get("regime_especial_tributacao") or 0))
@@ -432,7 +438,11 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     if ibscbs:
         _montar_ibscbs(inf, ibscbs)
 
-    return ET.tostring(root, encoding="unicode")
+    # `encoding="unicode"` nunca inclui `<?xml version="1.0" encoding="UTF-8"?>` — a Sefin Nacional
+    # recusa isso de verdade (erro E1229 "Xml não está utilizando codificação UTF-8", confirmado em
+    # transmissão real em 20/11/2026), mesmo o XML por dentro já sendo UTF-8 correto. `encoding="UTF-8"`
+    # + `xml_declaration=True` resolve: continua batendo com o XSD (a declaração não muda o conteúdo).
+    return ET.tostring(root, encoding="UTF-8", xml_declaration=True).decode("utf-8")
 
 
 def _montar_ibscbs(inf, ibscbs: dict) -> None:

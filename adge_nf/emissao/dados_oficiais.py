@@ -295,13 +295,30 @@ def listar_cst_ibscbs() -> list[str]:
 def sugerir_cclasstrib_por_nbs(nbs_formatado: str) -> list[str]:
     """Sugestão de cClassTrib a partir do NBS do perfil de serviço (Anexo VIII da Receita,
     referência NÃO oficial — sempre editável, nunca bloqueia). "" quando o NBS não está no Anexo
-    VIII (ele só cobre um subconjunto dos NBS existentes)."""
+    VIII nem no complemento manual abaixo (o Anexo VIII só cobre um subconjunto dos NBS existentes)."""
     nbs = (nbs_formatado or "").split(" - ", 1)[0].strip()
     item = _anexo_viii_nbs().get(nbs)
-    if not item:
-        return []
-    return [formatar_cclasstrib(_cclasstrib_por_codigo()[s["cclasstrib"]]) for s in item["sugestoes"]
-            if s["cclasstrib"] in _cclasstrib_por_codigo()]
+    if item:
+        return [formatar_cclasstrib(_cclasstrib_por_codigo()[s["cclasstrib"]]) for s in item["sugestoes"]
+                if s["cclasstrib"] in _cclasstrib_por_codigo()]
+    extra = _SUGESTAO_MANUAL_CCLASSTRIB.get(nbs)
+    if extra and extra in _cclasstrib_por_codigo():
+        return [formatar_cclasstrib(_cclasstrib_por_codigo()[extra])]
+    return []
+
+
+_SUGESTAO_MANUAL_CCLASSTRIB = {
+    # Locação, cessão onerosa e arrendamento de bens imóveis (NBS 1.1002.10.00 residencial e
+    # 1.1002.20.00 não residencial) não aparecem no Anexo VIII extraído (rascunho incompleto da
+    # Receita) — cClassTrib 200027 confirmado direto na tabela oficial cClassTrib/CST (`cst_descricao`
+    # "Alíquota reduzida em 70%", `lc_redacao` citando literalmente o Art. 261, parágrafo único, da
+    # LC 214/2025: "As alíquotas do IBS e da CBS relativas às operações de locação, cessão onerosa e
+    # arrendamento de bens imóveis ficam reduzidas em 70%"). Complementar ao redutor social do
+    # Art. 260 (`gAjusteBCLocImoveis/tpAjusteBCLocImoveis=04`, só para a residencial) — os dois
+    # mecanismos coexistem na mesma nota, não são alternativos.
+    "1.1002.10.00": "200027",
+    "1.1002.20.00": "200027",
+}
 
 
 @lru_cache(maxsize=1)

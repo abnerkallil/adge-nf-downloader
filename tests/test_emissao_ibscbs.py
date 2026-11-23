@@ -58,7 +58,7 @@ class RedutorSocialLocacaoResidencial(unittest.TestCase):
                 "endereco": {"cep": "86010000", "logradouro": "Rua das Flores", "numero": "100", "bairro": "Centro"},
                 "ajustes": [{"tipo": "04", "descricao": "", "valor": 600.0}],
             }],
-            ibscbs_cst="200", ibscbs_cclasstrib="200001",
+            ibscbs_cst="200", ibscbs_cclasstrib="200027",  # Art. 261, locação de imóveis, redução de 70%
         )
         campos = dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao_residencial(), None, lanc)
         xml = dps.montar_xml(campos, serie="1", numero=1)
@@ -68,7 +68,7 @@ class RedutorSocialLocacaoResidencial(unittest.TestCase):
         self.assertIn("<vAjusteBCLocImoveis>600.00</vAjusteBCLocImoveis>", xml)
         self.assertNotIn("<cCIB>", xml)  # sem CIB neste caso (usa endereço)
         self.assertIn("<CST>200</CST>", xml)
-        self.assertIn("<cClassTrib>200001</cClassTrib>", xml)
+        self.assertIn("<cClassTrib>200027</cClassTrib>", xml)
         self.assertIn("<indDest>0</indDest>", xml)
 
     def test_unidade_com_cib(self):
@@ -77,7 +77,7 @@ class RedutorSocialLocacaoResidencial(unittest.TestCase):
             competencia="2026-11", data_prestacao="2026-11-05",
             incluir_ibscbs=True, ibscbs_imovel_cmun="4113700", ibscbs_imovel_vtotoper=1800.0,
             ibscbs_unidades_imobiliarias=[{"cib": "12345678", "endereco": {}, "ajustes": []}],
-            ibscbs_cst="200", ibscbs_cclasstrib="200001",
+            ibscbs_cst="200", ibscbs_cclasstrib="200027",  # Art. 261, locação de imóveis, redução de 70%
         )
         campos = dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao_residencial(), None, lanc)
         xml = dps.montar_xml(campos, serie="1", numero=2)
@@ -92,7 +92,7 @@ class RedutorSocialLocacaoResidencial(unittest.TestCase):
             competencia="2026-11", data_prestacao="2026-11-05",
             incluir_ibscbs=True, ibscbs_imovel_cmun="4113700", ibscbs_imovel_vtotoper=1800.0,
             ibscbs_unidades_imobiliarias=[{"cib": "", "endereco": {}, "ajustes": []}],
-            ibscbs_cst="200", ibscbs_cclasstrib="200001",
+            ibscbs_cst="200", ibscbs_cclasstrib="200027",  # Art. 261, locação de imóveis, redução de 70%
         )
         campos = dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao_residencial(), None, lanc)
         xml = dps.montar_xml(campos, serie="1", numero=3)

@@ -78,6 +78,26 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         self.assertTrue(valido, msg=str(erros))
         self.assertNotIn("<IM>", xml)
 
+    def test_telefone_e_email_do_prestador(self):
+        empresa_emissao_com_contato = empresa_emissao(telefone="(43) 99999-9999", email="contato@ferreiramaria.com.br")
+        lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
+                           valor=1250.0, competencia="2026-11", data_prestacao="2026-11-05")
+        campos = dps.montar_campos(EMPRESA, empresa_emissao_com_contato, perfil_locacao(), None, lanc)
+        xml = dps.montar_xml(campos, serie="1", numero=26)
+        valido, erros = validar(xml)
+        self.assertTrue(valido, msg=str(erros))
+        self.assertIn("<fone>43999999999</fone>", xml)
+        self.assertIn("<email>contato@ferreiramaria.com.br</email>", xml)
+
+    def test_sem_telefone_nem_email_omite_as_tags_do_prestador(self):
+        lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
+                           valor=1250.0, competencia="2026-11", data_prestacao="2026-11-05")
+        campos = dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao(), None, lanc)
+        xml = dps.montar_xml(campos, serie="1", numero=27)
+        valido, erros = validar(xml)
+        self.assertTrue(valido, msg=str(erros))
+        self.assertNotIn("<fone>", xml)
+
     def test_obra_com_cobra_e_inscricao_imobiliaria(self):
         lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901", valor=1250.0,
                            competencia="2026-11", data_prestacao="2026-11-05",

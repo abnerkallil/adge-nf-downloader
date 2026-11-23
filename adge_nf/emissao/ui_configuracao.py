@@ -620,6 +620,8 @@ class DialogoConfiguracaoEmissao(Modal):
         self.v_reg_esp = tk.StringVar(
             value=es.REGIME_ESPECIAL_TRIBUTACAO.get(cfg.get("regime_especial_tributacao", 0), es.REGIME_ESPECIAL_TRIBUTACAO[0]))
         self.v_im = tk.StringVar(value=cfg["inscricao_municipal"])
+        self.v_telefone = tk.StringVar(value=cfg.get("telefone", ""))
+        self.v_email = tk.StringVar(value=cfg.get("email", ""))
         self.v_municipio = tk.StringVar(value=cfg["municipio"])
         self.v_uf = tk.StringVar(value=cfg["uf"])
         self.v_cod_ibge = tk.StringVar(value=cfg["codigo_municipio_ibge"])
@@ -646,6 +648,8 @@ class DialogoConfiguracaoEmissao(Modal):
                     width=24, font=F(10)).grid(row=1, column=1, sticky="w", pady=(0, 10))
         campo_rotulado(g, 2, "Inscrição Municipal (IM) — opcional", Campo(g, self.v_im, largura=22), col=0, columnspan=1)
         campo_rotulado(g, 2, "Município e UF do prestador", self._linha_municipio(g), col=1, columnspan=1)
+        campo_rotulado(g, 4, "Telefone da empresa — opcional", Campo(g, self.v_telefone, largura=22), col=0, columnspan=1)
+        campo_rotulado(g, 4, "E-mail da empresa — opcional", Campo(g, self.v_email, largura=30), col=1, columnspan=1)
         self.f_simples = tk.Frame(g, bg=P.superficie)
         self.f_simples.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         rotulo(self.f_simples, "Alíquota do Simples do mês (%)", 9, "bold", "suave").pack(anchor="w")
@@ -920,6 +924,7 @@ class DialogoConfiguracaoEmissao(Modal):
         self.cfg.update({
             "regime": self._regime_chave(), "regime_especial_tributacao": nome_para_reg_esp.get(self.v_reg_esp.get(), 0),
             "inscricao_municipal": im, "municipio": municipio,
+            "telefone": re.sub(r"\D", "", self.v_telefone.get()), "email": self.v_email.get().strip(),
             "uf": self.v_uf.get().strip().upper(), "codigo_municipio_ibge": self.v_cod_ibge.get().strip(),
             "endereco": {"cep": self.v_end_cep.get().strip(), "logradouro": self.v_end_logradouro.get().strip(),
                         "numero": self.v_end_numero.get().strip(), "complemento": self.v_end_complemento.get().strip(),

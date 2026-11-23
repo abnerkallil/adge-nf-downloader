@@ -59,6 +59,7 @@ CATALOGO = {
     "ITEM-50": "Assistente passo a passo de emissão de notas",
     "ITEM-51": "Campos avançados da DPS",
     "ITEM-52": "IBS/CBS na emissão de notas",
+    "ITEM-53": "Telefone e e-mail do prestador",
 }
 
 PADRAO = re.compile(r"^ITEM-\d{2,3}$")

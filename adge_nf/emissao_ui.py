@@ -24,7 +24,7 @@ from .ui import P, Botao, Campo, Cartao, Interruptor, Modal, Rolavel, Segmentado
 
 STATUS_TEXTO = {previa.PRONTO: "Pronto", previa.PRECISA_PERFIL: "Precisa de perfil", previa.EXCLUIDO: "Excluído"}
 COLUNAS = (("tomador", "Tomador", 220, "w"), ("documento", "Documento", 130, "w"), ("valor", "Valor", 100, "e"),
-           ("competencia", "Competência", 100, "w"), ("perfil", "Perfil", 180, "w"), ("status", "Situação", 140, "w"))
+           ("competencia", "Competência", 100, "w"), ("perfil", "Perfil", 180, "w"), ("status", "Situação", 260, "w"))
 
 
 def moeda(v: float) -> str:
@@ -44,6 +44,7 @@ class DialogoEmissao(Modal):
         self.lancamentos = []
         self.itens = []
         self._status_transmissao = {}  # lancamento.id -> (sucesso: bool, mensagem: str)
+        self._situacao_texto = {}      # lancamento.id -> texto completo da situação (pro "ver completo")
         self.resizable(True, True)
         self._montar()
         tela_h = self.winfo_screenheight()
@@ -694,10 +695,22 @@ class DialogoEmissao(Modal):
         self.tv.tag_configure("pronto", foreground=P.pos_texto)
         self.tv.tag_configure("precisa_perfil", foreground=P.aviso_texto)
         self.tv.tag_configure("excluido", foreground=P.suave)
+        self.tv.bind("<Double-1>", self._ver_situacao_completa)
+        rotulo(corpo, "Dica: dê 2 cliques numa linha para ver a situação completa.", 9, cor="suave").pack(
+            side="left", anchor="n")
+
+    def _ver_situacao_completa(self, _evento=None):
+        sel = self.tv.selection()
+        if not sel:
+            return
+        item = self.itens[int(sel[0])]
+        situacao = self._situacao_texto.get(item.lancamento.id, "")
+        ui.informar(self, f"Situação — {item.lancamento.tomador_nome}", situacao)
 
     def _atualizar_previa(self):
         self.itens = previa.preparar_previa(self.emissao_cfg, self.lancamentos)
         self.tv.delete(*self.tv.get_children())
+        self._situacao_texto = {}
         for i, item in enumerate(self.itens):
             l = item.lancamento
             nome_perfil = next((p["nome"] for p in self.emissao_cfg.get("perfis", []) if p["id"] == item.perfil_id), "—")
@@ -709,6 +722,7 @@ class DialogoEmissao(Modal):
             else:
                 situacao = STATUS_TEXTO[item.status] + (f" ({'; '.join(item.erros)})" if item.erros else "")
                 tag = item.status
+            self._situacao_texto[l.id] = situacao
             self.tv.insert("", "end", iid=str(i), tags=(tag,),
                            values=(l.tomador_nome, l.tomador_documento, moeda(l.valor), l.competencia,
                                    nome_perfil, situacao))
@@ -789,10 +803,10 @@ class DialogoEmissao(Modal):
         except ErroAdge as e:
             self._status_transmissao[lanc.id] = (False, str(e))
             return
-        if not DialogoConferenciaNota.perguntar(self, campos):
-            return  # "Corrigir": pula esta nota, segue pras próximas
         serie = "1"
         numero = historico.proximo_numero_dps(self.store.pasta, self.emp["id"], serie)
+        if not DialogoConferenciaNota.perguntar(self, campos, serie, numero, perfil):
+            return  # "Corrigir": pula esta nota, segue pras próximas
         try:
             xml = dps.montar_xml(campos, serie=serie, numero=numero, ambiente=ambiente)
             xml_assinado = assinatura.assinar_dps(xml, self.emp["pfx"], self.store.senha_da_empresa(self.emp) or "")
@@ -820,66 +834,187 @@ class DialogoEmissao(Modal):
         self._status_transmissao[lanc.id] = (True, "")
 
 
-def _resumo_conferencia(campos: dict) -> str:
-    """Texto de conferência de uma nota antes de transmitir — tudo que vai na DPS, parecido com o
-    resumo do portal antes de emitir (pedido explícito do Abner)."""
-    p, t, s, v = campos["prestador"], campos["tomador"], campos["servico"], campos["valores"]
-    linhas = [
-        "PRESTADOR", f"  {p['nome']} — {p['cnpj']}", "",
-        "TOMADOR", f"  {t['nome'] or '(sem nome)'} — {t['documento'] or t.get('nif') or '(sem documento)'}",
-    ]
-    end_t = t.get("endereco") or {}
-    if end_t.get("logradouro"):
-        linhas.append(f"  Endereço: {end_t.get('logradouro')}, {end_t.get('numero', '')} - {end_t.get('municipio', '')}/{end_t.get('uf', '')}")
-    linhas += ["", "SERVIÇO", f"  CTN: {s['ctn']}", f"  NBS: {s['nbs'] or '—'}",
-               f"  Descrição: {campos['descricao'] or '(padrão)'}", "",
-               "VALORES", f"  Valor do serviço: {moeda(v['valor_servico'])}"]
-    if v.get("desconto_incondicionado"):
-        linhas.append(f"  Desconto incondicionado: {moeda(v['desconto_incondicionado'])}")
-    if v.get("desconto_condicionado"):
-        linhas.append(f"  Desconto condicionado: {moeda(v['desconto_condicionado'])}")
-    issqn = s["issqn"]
-    linhas.append(f"  ISSQN: {es.TRIB_ISSQN.get(issqn.get('trib_issqn'), '—')} / {es.TP_RET_ISSQN.get(issqn.get('tp_ret_issqn'), '—')}")
-    pc = v.get("pis_cofins")
-    if pc:
-        linhas.append(f"  PIS: {moeda(pc['valor_pis'])} ({pc['aliquota_pis']}%) — COFINS: {moeda(pc['valor_cofins'])} ({pc['aliquota_cofins']}%)")
-    for campo, rotulo_v in (("retencao_cp", "Retenção CP/INSS"), ("retencao_irrf", "Retenção IRRF"), ("retencao_csll_outros", "Retenção CSLL")):
-        if v.get(campo):
-            linhas.append(f"  {rotulo_v}: {moeda(v[campo])}")
-    ibscbs = campos.get("ibscbs")
-    if ibscbs:
-        linhas += ["", "IBS/CBS", f"  CST: {ibscbs['cst']} — cClassTrib: {ibscbs['cclasstrib']}"]
-        info = do.info_legal_cclasstrib(ibscbs["cclasstrib"])
-        if info.get("p_red_ibs") or info.get("p_red_cbs"):
-            linhas.append(f"  Redução oficial: IBS {info.get('p_red_ibs', 0)}% / CBS {info.get('p_red_cbs', 0)}%")
-        if ibscbs.get("imovel"):
-            linhas.append(f"  Operação com imóvel (município IBGE {ibscbs['imovel']['cmun']})")
-        if ibscbs.get("dest"):
-            linhas.append(f"  Destinatário diferente do tomador: {ibscbs['dest'].get('nome')}")
-    return "\n".join(linhas)
+def _fmt_doc(doc: str) -> str:
+    d = "".join(c for c in (doc or "") if c.isdigit())
+    if len(d) == 11:
+        return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+    if len(d) == 14:
+        return f"{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}"
+    return doc or "—"
+
+
+def _fmt_cep(cep: str) -> str:
+    d = "".join(c for c in (cep or "") if c.isdigit())
+    return f"{d[:5]}-{d[5:]}" if len(d) == 8 else (cep or "—")
+
+
+def _endereco_linha(end: dict) -> str:
+    partes = [end.get("logradouro", ""), end.get("numero", ""), end.get("complemento", ""),
+              end.get("bairro", ""), end.get("municipio", ""), end.get("uf", "")]
+    return ", ".join(p for p in partes if p) or "—"
 
 
 class DialogoConferenciaNota(Modal):
-    """Resumo de uma nota antes de transmitir, uma por vez — "Corrigir" pula esta nota (sem
-    transmitir), "Confirmar e transmitir" segue com o envio."""
+    """Conferência completa de uma nota antes de transmitir, no espírito de uma DANFSe (pedido
+    explícito do Abner, com a nota real da Ferreira Maria como referência) — uma nota por vez.
+    "Corrigir" pula esta nota (sem transmitir), "Confirmar e transmitir" segue com o envio.
 
-    def __init__(self, pai, campos: dict):
-        super().__init__(pai, "Conferir antes de transmitir", largura=560, altura=560)
+    Esta é a PRÉVIA do que vai ser enviado, não a NFS-e emitida: chave, número da NFS-e e valores
+    oficiais de IBS/CBS em R$ só existem depois que o Sefin Nacional gera a nota — aqui mostramos
+    o número/série da DPS (o que SERÁ enviado) e deixamos isso explícito, pra não confundir com um
+    documento já emitido."""
+
+    DESTAQUE_COR = P.verde_escuro
+
+    def __init__(self, pai, campos: dict, serie: str, numero: int, perfil: dict):
+        super().__init__(pai, "Conferir antes de transmitir", largura=640, altura=680)
         self.resposta = False
         self.resizable(True, True)
+        self.minsize(px(560), px(420))
         rolagem = Rolavel(self)
         rolagem.pack(fill="both", expand=True)
-        texto = tk.Text(rolagem.corpo, wrap="word", height=22, width=62, bg=P.superficie, fg=P.texto,
-                        font=F(10), relief="flat", borderwidth=0)
-        texto.insert("1.0", _resumo_conferencia(campos))
-        texto.configure(state="disabled")
-        texto.pack(fill="both", expand=True)
+        self.texto = tk.Text(rolagem.corpo, wrap="word", height=28, width=70, bg=P.superficie, fg=P.texto,
+                             font=F(10), relief="flat", borderwidth=0, padx=4, pady=2)
+        self.texto.tag_configure("secao", font=F(11, "bold"), foreground=P.verde_escuro, spacing1=10, spacing3=4)
+        self.texto.tag_configure("rotulo", font=F(10), foreground=P.suave)
+        self.texto.tag_configure("destaque", font=F(10, "bold"), foreground=self.DESTAQUE_COR)
+        self.texto.tag_configure("normal", font=F(10), foreground=P.texto)
+        self.texto.tag_configure("aviso", font=F(9, "italic"), foreground=P.suave)
+        self._preencher(campos, serie, numero, perfil)
+        self.texto.configure(state="disabled")
+        self.texto.pack(fill="both", expand=True)
         rodape = tk.Frame(self, bg=P.fundo)
         rodape.pack(fill="x", pady=(10, 0))
         Botao(rodape, "Corrigir", self._corrigir).pack(side="right")
         Botao(rodape, "Confirmar e transmitir", self._confirmar, estilo="primario").pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda *_: self._corrigir())
         self.mostrar()
+
+    def _secao(self, titulo):
+        self.texto.insert("end", f"{titulo}\n", "secao")
+
+    def _linha(self, rotulo_txt, valor, destacar=False):
+        self.texto.insert("end", f"{rotulo_txt}: ", "rotulo")
+        self.texto.insert("end", f"{valor if valor not in (None, '') else '—'}\n", "destaque" if destacar else "normal")
+
+    def _aviso(self, texto):
+        self.texto.insert("end", f"{texto}\n", "aviso")
+
+    def _preencher(self, campos: dict, serie: str, numero: int, perfil: dict):
+        p, t, s, v = campos["prestador"], campos["tomador"], campos["servico"], campos["valores"]
+        interm, subst = campos.get("intermediario"), campos.get("substituicao")
+        ibscbs = campos.get("ibscbs")
+        end_p, end_t = p.get("endereco") or {}, t.get("endereco") or {}
+
+        self._secao("DADOS DA DPS (ainda não emitida)")
+        self._linha("Nº/Série da DPS", f"{numero} / {serie}")
+        self._linha("Competência", campos.get("competencia"))
+        self._linha("Data da prestação", campos.get("data_emissao"))
+        self._linha("Situação", "A transmitir")
+        self._linha("Finalidade", "NFS-e regular")
+
+        self._secao("PRESTADOR")
+        self._linha("Nome", p.get("nome"), destacar=True)
+        self._linha("CNPJ", _fmt_doc(p.get("cnpj")))
+        self._linha("Inscrição Municipal", p.get("inscricao_municipal") or "—")
+        self._linha("Telefone", p.get("telefone") or "—", destacar=bool(p.get("telefone")))
+        self._linha("E-mail", p.get("email") or "—")
+        self._linha("Endereço", _endereco_linha(end_p))
+        self._linha("CEP", _fmt_cep(end_p.get("cep")), destacar=bool(end_p.get("cep")))
+        self._linha("Município (código IBGE)", p.get("codigo_municipio_ibge") or "—")
+        self._linha("Regime (Simples Nacional)", es.REGIMES.get(p.get("regime"), p.get("regime")))
+
+        self._secao("TOMADOR")
+        doc_t = t.get("documento") or t.get("nif") or ""
+        self._linha("Nome", t.get("nome") or "(sem nome)", destacar=True)
+        self._linha("CPF/CNPJ/NIF", _fmt_doc(doc_t) if t.get("documento") else (doc_t or "—"))
+        self._linha("Telefone", t.get("telefone") or "—", destacar=bool(t.get("telefone")))
+        self._linha("E-mail", t.get("email") or "—")
+        self._linha("Endereço", _endereco_linha(end_t), destacar=bool(end_t.get("complemento") or end_t.get("numero")))
+        self._linha("CEP", _fmt_cep(end_t.get("cep")), destacar=bool(end_t.get("cep")))
+        if end_t.get("municipio"):
+            self._linha("Município/UF/IBGE", f"{end_t.get('municipio')}/{end_t.get('uf')} — {end_t.get('codigo_municipio_ibge') or '—'}")
+
+        self._secao("INTERMEDIÁRIO / DESTINATÁRIO (IBS-CBS)")
+        if interm:
+            self._linha("Intermediário", f"{interm.get('nome')} — {_fmt_doc(interm.get('documento'))}")
+        else:
+            self._linha("Intermediário", "Não identificado")
+        if ibscbs and ibscbs.get("dest"):
+            self._linha("Destinatário (IBS/CBS)", ibscbs["dest"].get("nome"), destacar=True)
+        else:
+            self._linha("Destinatário (IBS/CBS)", "Não identificado (= tomador)")
+        if subst:
+            self._linha("Substitui a NFS-e", subst.get("chave"))
+
+        self._secao("SERVIÇO")
+        self._linha("Perfil de serviço", perfil.get("nome") if perfil else "—")
+        self._linha("Código de tributação nacional (CTN)", s.get("ctn"), destacar=True)
+        self._linha("NBS", s.get("nbs") or "—", destacar=bool(s.get("nbs")))
+        self._linha("Local da prestação (código IBGE)", (end_t.get("codigo_municipio_ibge") or p.get("codigo_municipio_ibge") or "—"))
+        self._linha("Descrição", campos.get("descricao") or "(padrão do perfil)")
+
+        self._secao("TRIBUTAÇÃO MUNICIPAL — ISSQN")
+        issqn = s["issqn"]
+        self._linha("Situação", es.TRIB_ISSQN.get(issqn.get("trib_issqn"), "—"),
+                    destacar=issqn.get("trib_issqn") != 1)
+        self._linha("Retenção", es.TP_RET_ISSQN.get(issqn.get("tp_ret_issqn"), "—"))
+
+        self._secao("TRIBUTAÇÃO FEDERAL")
+        pc = v.get("pis_cofins")
+        if pc:
+            self._linha("PIS", f"{moeda(pc['valor_pis'])} ({pc['aliquota_pis']}%)", destacar=pc["aliquota_pis"] > 0)
+            self._linha("COFINS", f"{moeda(pc['valor_cofins'])} ({pc['aliquota_cofins']}%)", destacar=pc["aliquota_cofins"] > 0)
+            self._linha("Retenção PIS/COFINS/CSLL", es.TP_RET_PISCOFINS.get(pc["tp_ret_pis_cofins"], "—"))
+        else:
+            self._linha("PIS/COFINS", "Grupo não incluído nesta nota (MEI ou perfil sem PIS/COFINS)")
+        for campo, rotulo_v in (("retencao_cp", "Retenção CP/INSS"), ("retencao_irrf", "Retenção IRRF"),
+                                 ("retencao_csll_outros", "Retenção CSLL")):
+            valor_ret = v.get(campo) or 0.0
+            self._linha(rotulo_v, moeda(valor_ret), destacar=valor_ret > 0)
+
+        if ibscbs:
+            self._secao("TRIBUTAÇÃO IBS/CBS")
+            self._linha("CST", ibscbs["cst"], destacar=True)
+            self._linha("cClassTrib", ibscbs["cclasstrib"], destacar=True)
+            info = do.info_legal_cclasstrib(ibscbs["cclasstrib"])
+            if info:
+                self._linha("Classificação", info.get("descricao") or "—")
+                if info.get("p_red_ibs") or info.get("p_red_cbs"):
+                    self._linha("Redução oficial", f"IBS {info.get('p_red_ibs', 0)}% / CBS {info.get('p_red_cbs', 0)}%", destacar=True)
+                if info.get("link_lei"):
+                    self._linha("Base legal", info["link_lei"])
+            if ibscbs.get("c_ind_op"):
+                self._linha("Código indicador de operação", ibscbs["c_ind_op"])
+            if ibscbs.get("imovel"):
+                self._linha("Operação com imóvel — município IBGE", ibscbs["imovel"]["cmun"], destacar=True)
+                for u in ibscbs["imovel"].get("unidades") or []:
+                    for aj in u.get("ajustes") or []:
+                        self._linha(f"  Ajuste de base ({es.IBSCBS_TP_AJUSTE_BC_LOC_IMOVEIS.get(aj['tipo'], aj['tipo'])})",
+                                    moeda(aj.get("valor") or 0), destacar=True)
+            self._aviso("Alíquotas e valores de IBS/CBS em R$ (base, UF, município, total) são calculados "
+                        "pelo Sefin Nacional na própria NFS-e gerada — o app não os calcula nem os envia.")
+
+        self._secao("TOTAIS")
+        self._linha("Valor do serviço", moeda(v["valor_servico"]), destacar=True)
+        desc_total = (v.get("desconto_incondicionado") or 0) + (v.get("desconto_condicionado") or 0)
+        if desc_total:
+            self._linha("Descontos", moeda(desc_total))
+        ret_total = (v.get("retencao_cp") or 0) + (v.get("retencao_irrf") or 0) + (v.get("retencao_csll_outros") or 0)
+        if pc and pc.get("tp_ret_pis_cofins"):
+            ret_total += pc["valor_pis"] + pc["valor_cofins"]
+        if ret_total:
+            self._linha("Retenções", moeda(ret_total))
+        liquido = v["valor_servico"] - desc_total - ret_total
+        self._linha("Valor líquido estimado", moeda(liquido), destacar=True)
+        self._aviso("Estimado (serviço − descontos − retenções informadas); o valor líquido oficial vem na NFS-e gerada.")
+
+        self._secao("INFORMAÇÕES COMPLEMENTARES")
+        self.texto.insert("end", f"{campos.get('informacoes_complementares') or '(nenhuma)'}\n", "normal")
+
+        self._secao("TRIBUTOS APROXIMADOS (LEI 12.741/2012)")
+        self._aviso("Não informado nesta nota (indTotTrib = 0) — o app não tem o percentual aproximado "
+                    "de tributos cadastrado para calcular este valor.")
 
     def _confirmar(self):
         self.resposta = True
@@ -890,8 +1025,8 @@ class DialogoConferenciaNota(Modal):
         self.destroy()
 
     @classmethod
-    def perguntar(cls, pai, campos: dict) -> bool:
-        d = cls(pai, campos)
+    def perguntar(cls, pai, campos: dict, serie: str, numero: int, perfil: dict) -> bool:
+        d = cls(pai, campos, serie, numero, perfil)
         d.wait_window()
         return d.resposta
 

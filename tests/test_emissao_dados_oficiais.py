@@ -133,10 +133,18 @@ class CClassTribLista(unittest.TestCase):
 
 
 class SugestaoCClassTribPorNbs(unittest.TestCase):
-    def test_nbs_fora_do_anexo_viii_devolve_vazio(self):
-        """O Anexo VIII (rascunho da Receita) não cobre todo NBS — ex.: locação residencial
-        (1.1002.10.00) não está nele hoje. Nunca trava: só não sugere nada."""
-        self.assertEqual(do.sugerir_cclasstrib_por_nbs("1.1002.10.00 - Locação residencial"), [])
+    def test_nbs_fora_do_anexo_viii_e_sem_complemento_devolve_vazio(self):
+        """O Anexo VIII (rascunho da Receita) não cobre todo NBS, e nem todo NBS fora dele tem
+        complemento manual — nesse caso nunca trava, só não sugere nada."""
+        self.assertEqual(do.sugerir_cclasstrib_por_nbs("9.9999.99.99 - Isso não existe"), [])
+
+    def test_locacao_de_imoveis_usa_o_complemento_manual_art_261(self):
+        """Locação de imóveis (1.1002.10.00/1.1002.20.00) não está no Anexo VIII, mas tem
+        complemento manual direto da tabela oficial cClassTrib (Art. 261, redução de 70%)."""
+        for nbs in ("1.1002.10.00 - Locação residencial", "1.1002.20.00 - Locação não residencial"):
+            sugestoes = do.sugerir_cclasstrib_por_nbs(nbs)
+            self.assertEqual(sugestoes, ["200027 - Operações de locação, cessão onerosa e arrendamento de bens imóveis"])
+            self.assertEqual(do.cst_por_cclasstrib("200027"), "200")
 
     def test_nbs_coberto_devolve_sugestao_formatada(self):
         sugestoes = do.sugerir_cclasstrib_por_nbs("1.1502.10.00 - Serviços de projeto")

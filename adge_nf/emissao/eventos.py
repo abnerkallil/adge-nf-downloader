@@ -86,4 +86,5 @@ def montar_cancelamento_xml(chave_acesso: str, documento_autor: str, motivo_codi
     _sub(e101101, "cMotivo", motivo_codigo)
     _sub(e101101, "xMotivo", motivo_texto.strip()[:255])
 
-    return ET.tostring(root, encoding="unicode")
+    # Mesma correção do E1229 aplicada em dps.py: declaração UTF-8 explícita.
+    return ET.tostring(root, encoding="UTF-8", xml_declaration=True).decode("utf-8")

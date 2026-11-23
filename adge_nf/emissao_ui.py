@@ -887,8 +887,46 @@ class DialogoConferenciaNota(Modal):
         rodape.pack(fill="x", pady=(10, 0))
         Botao(rodape, "Corrigir", self._corrigir).pack(side="right")
         Botao(rodape, "Confirmar e transmitir", self._confirmar, estilo="primario").pack(side="right", padx=(0, 8))
+        Botao(rodape, "Testar certificado (sem emitir)", self._testar_certificado, estilo="secundario").pack(side="left")
         self.bind("<Escape>", lambda *_: self._corrigir())
         self.mostrar()
+
+    def _testar_certificado(self):
+        """Só consulta (`GET /nfse/{chave}`) com uma chave fictícia — nunca emite nem transmite
+        nada. Mesma sessão/certificado que a transmissão de verdade usaria, pra isolar se o
+        servidor de EMISSÃO aceita este certificado (pedido do Abner, investigando o HTTP 403)."""
+        emp, store = self.pai.emp, self.pai.store
+        pfx = emp.get("pfx", "")
+        if not Path(pfx).is_file():
+            ui.erro(self, "Sem certificado", "Esta empresa não tem um certificado A1 (.pfx) cadastrado.")
+            return
+        senha = store.senha_da_empresa(emp) or ui.pedir_texto(
+            self, "Senha do certificado", f"Digite a senha do certificado de {emp['nome']}:", oculto=True)
+        if not senha:
+            return
+        try:
+            sessao = core.sessao_com_certificado(pfx, senha)
+        except ErroAdge as e:
+            ui.erro(self, "Certificado recusado", str(e))
+            return
+        chave_ficticia = "0" * 50
+        resultado = transmissao.consultar_por_chave(chave_ficticia, sessao, tp_amb=transmissao.ambiente_ativo())
+        if resultado.sucesso:
+            ui.informar(self, "Certificado aceito",
+                        "O servidor respondeu com sucesso a uma chave que nem existe — "
+                        "o certificado passou certinho pela validação.")
+        elif "Nenhuma NFS-e" in resultado.erro or "404" in resultado.erro:
+            ui.informar(self, "Certificado aceito",
+                        "O servidor disse \"não encontrada\" (HTTP 404) pra essa chave fictícia — "
+                        "isso É o resultado esperado: o certificado passou pela validação, só não achou "
+                        "a nota (que realmente não existe). O problema do 403 não é o certificado.")
+        elif "403" in resultado.erro:
+            ui.erro(self, "Certificado recusado (HTTP 403)",
+                    "O servidor recusou o certificado nesta chamada de teste também — confirma que o "
+                    "403 é sobre o certificado em si neste servidor (emissão), não sobre o conteúdo "
+                    "da nota.\n\nResposta do servidor:\n" + resultado.erro)
+        else:
+            ui.informar(self, "Resposta do servidor", resultado.erro)
 
     def _secao(self, titulo):
         self.texto.insert("end", f"{titulo}\n", "secao")

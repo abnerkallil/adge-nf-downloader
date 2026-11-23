@@ -49,8 +49,8 @@ class SessaoFalsa:
         self.chamadas.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         return self.resposta
 
-    def get(self, url, timeout=None):
-        self.chamadas.append({"url": url, "timeout": timeout})
+    def get(self, url, headers=None, timeout=None):
+        self.chamadas.append({"url": url, "headers": headers, "timeout": timeout})
         return self.resposta
 
 
@@ -95,6 +95,7 @@ class EnvioComSucesso(unittest.TestCase):
         chamada = sessao.chamadas[0]
         self.assertEqual(chamada["url"], f"{transmissao.HOST_SEFIN_HOMOLOGACAO}/nfse")
         self.assertEqual(chamada["headers"]["Content-Type"], "application/json; charset=utf-8")
+        self.assertEqual(chamada["headers"]["User-Agent"], transmissao.USER_AGENT)
         self.assertIn("dpsXmlGZipB64", chamada["json"])
         descompactado = gzip.decompress(base64.b64decode(chamada["json"]["dpsXmlGZipB64"])).decode("utf-8")
         self.assertEqual(descompactado, "<DPS>conteudo</DPS>")
@@ -138,18 +139,59 @@ class EnvioComErro(unittest.TestCase):
         self.assertIn("formato inesperado", resultado.erro)
 
 
+class ErroComPaginaHtml(unittest.TestCase):
+    """Bloqueio de rede/servidor (ex.: 403 do IIS) não vem em JSON — vira uma página HTML genérica.
+    O motivo precisa ficar legível (o título da página), não o HTML cru, e precisa deixar claro que
+    isso não é uma rejeição de negócio da DPS."""
+    HTML_403 = ('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN">\r\n<html><head>'
+                '<title>403 - Forbidden: Access is denied.</title></head><body>...</body></html>')
+
+    def test_403_com_pagina_html_do_iis(self):
+        sessao = SessaoFalsa(Resposta(403, self.HTML_403))
+        resultado = transmissao.enviar("<DPS/>", sessao)
+        self.assertFalse(resultado.sucesso)
+        self.assertIn("403 - Forbidden: Access is denied.", resultado.erro)
+        self.assertNotIn("<html>", resultado.erro)
+        self.assertIn("não é uma rejeição da DPS", resultado.erro)
+
+    def test_erro_de_negocio_json_continua_mostrando_o_codigo(self):
+        sessao = SessaoFalsa(Resposta(400, '{"erros": [{"Codigo": "E1229", "Descricao": "Xml não UTF-8."}]}'))
+        resultado = transmissao.enviar("<DPS/>", sessao)
+        self.assertIn("E1229", resultado.erro)
+        self.assertIn("Xml não UTF-8.", resultado.erro)
+
+
 class ConsultaPorChave(unittest.TestCase):
     def test_consulta_com_sucesso(self):
         sessao = SessaoFalsa(Resposta(200, _corpo_sucesso()))
         resultado = transmissao.consultar_por_chave("41137000123456780001900000010000000000000011", sessao)
         self.assertTrue(resultado.sucesso)
         self.assertEqual(resultado.numero, "11")
+        self.assertEqual(sessao.chamadas[0]["headers"]["User-Agent"], transmissao.USER_AGENT)
 
     def test_404_nao_levanta_fica_erro_recuperavel(self):
         sessao = SessaoFalsa(Resposta(404, ""))
         resultado = transmissao.consultar_por_chave("chave-inexistente", sessao)
         self.assertFalse(resultado.sucesso)
         self.assertIn("Nenhuma NFS-e", resultado.erro)
+
+
+class Cancelar(unittest.TestCase):
+    def test_cancelamento_com_sucesso_manda_user_agent(self):
+        sessao = SessaoFalsa(Resposta(200, "{}"))
+        resultado = transmissao.cancelar("<pedRegEvento/>", "chave-qualquer", sessao)
+        self.assertTrue(resultado.sucesso)
+        self.assertEqual(resultado.chave, "chave-qualquer")
+        chamada = sessao.chamadas[0]
+        self.assertTrue(chamada["url"].endswith("/nfse/chave-qualquer/eventos"))
+        self.assertEqual(chamada["headers"]["User-Agent"], transmissao.USER_AGENT)
+        self.assertIn("pedidoRegistroEventoXmlGZipB64", chamada["json"])
+
+    def test_cancelamento_recusado_nao_levanta(self):
+        sessao = SessaoFalsa(Resposta(403, "<html><title>403 - Forbidden: Access is denied.</title></html>"))
+        resultado = transmissao.cancelar("<pedRegEvento/>", "chave-qualquer", sessao)
+        self.assertFalse(resultado.sucesso)
+        self.assertIn("403 - Forbidden", resultado.erro)
 
 
 if __name__ == "__main__":

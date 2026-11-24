@@ -226,7 +226,11 @@ def perfil_padrao(nome: str = "") -> dict:
 
 def endereco_padrao() -> dict:
     return {"cep": "", "logradouro": "", "numero": "", "complemento": "", "bairro": "", "municipio": "", "uf": "",
-            "codigo_municipio_ibge": ""}
+            "codigo_municipio_ibge": "",
+            # Endereço no exterior (`toma/end/endExt`, E0242) - só usado quando o tomador é
+            # identificado por NIF; logradouro/número/complemento/bairro acima são compartilhados
+            # com o endereço nacional (TCEndereco, mesmo grupo pros dois).
+            "pais": "", "codigo_postal": "", "cidade": "", "estado_provincia": ""}
 
 
 def endereco_rua_padrao() -> dict:
@@ -258,6 +262,15 @@ def configuracao_padrao() -> dict:
         "versao": VERSAO_ATUAL,
         "regime": "simples", "regime_especial_tributacao": 0,
         "inscricao_municipal": "", "telefone": "", "email": "",
+        # `trib/totTrib` (Lei 12.741/2012, "nota fiscal transparente") só para quem NÃO é optante do
+        # Simples Nacional nem MEI - regras E0712/E0713/E0710 proíbem indTotTrib/pTotTribSN pra esse
+        # caso (confirmado em produção real, teste da Aparecida em 24/11). O padrão federal (11,33%)
+        # é a composição usual do Lucro Presumido pra serviços - PIS 0,65% + COFINS 3% + IRPJ
+        # 15%×32% (presunção) = 4,80% + CSLL 9%×32% = 2,88% (confirmado pelo Abner contra o valor
+        # que o próprio portal mostra na emissão manual) - editável por empresa, porque a presunção
+        # muda com o regime/atividade.
+        "percentual_tributos_federais": 11.33, "percentual_tributos_estaduais": 0.0,
+        "percentual_tributos_municipais": 0.0,
         "municipio": "", "uf": "", "codigo_municipio_ibge": "",
         "endereco": endereco_rua_padrao(),
         "simples": {"aliquota_mes": 0.0},

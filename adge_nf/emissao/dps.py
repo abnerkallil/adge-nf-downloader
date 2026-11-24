@@ -98,7 +98,13 @@ def montar_campos(empresa: dict, empresa_emissao: dict, perfil: dict, tomador: d
     if not empresa_emissao.get("codigo_municipio_ibge"):
         raise ErroAdge("Falta o código IBGE do município da empresa na configuração de emissão.")
     ano, mes = int(lancamento.competencia[:4]), int(lancamento.competencia[5:7])
-    data_emissao = lancamento.data_prestacao or limites_mes(ano, mes)[1].isoformat()
+    # Sem data de prestação informada, o padrão é o último dia da competência - mas a Sefin
+    # Nacional rejeita (E0015) um dCompet depois do dhEmi (data/hora de emissão), e isso acontece
+    # sempre que a competência é o mês corrente e ainda não chegou no fim do mês (achado no teste
+    # real da Aparecida em 24/11: competência 2026-11, sem data de prestação -> caiu em 30/11,
+    # depois de hoje). `min(..., hoje)` corrige isso sem mudar nada para competências já encerradas
+    # (onde o último dia do mês já é <= hoje de qualquer forma).
+    data_emissao = lancamento.data_prestacao or min(limites_mes(ano, mes)[1], dt.date.today()).isoformat()
     return {
         "prestador": {
             "cnpj": _so_digitos(empresa.get("cnpj", "")),
@@ -107,6 +113,10 @@ def montar_campos(empresa: dict, empresa_emissao: dict, perfil: dict, tomador: d
             "codigo_municipio_ibge": empresa_emissao.get("codigo_municipio_ibge", ""),
             "regime": empresa_emissao.get("regime", ""),
             "regime_especial_tributacao": empresa_emissao.get("regime_especial_tributacao", 0),
+            "percentual_tributos_federais": empresa_emissao.get("percentual_tributos_federais", 0.0),
+            "percentual_tributos_estaduais": empresa_emissao.get("percentual_tributos_estaduais", 0.0),
+            "percentual_tributos_municipais": empresa_emissao.get("percentual_tributos_municipais", 0.0),
+            "aliquota_simples_mes": (empresa_emissao.get("simples") or {}).get("aliquota_mes", 0.0),
             "endereco": dict(empresa_emissao.get("endereco") or {}),
             "telefone": empresa_emissao.get("telefone", ""), "email": empresa_emissao.get("email", ""),
         },
@@ -232,6 +242,24 @@ def _end_nacional(pai, endereco: dict, cod_mun_ibge: str):
     _sub(end, "xBairro", (endereco.get("bairro") or "Centro")[:60])
 
 
+def _end_exterior(pai, endereco: dict):
+    """`TCEndereco`: `endExt` (país, código postal, cidade, estado/província - todos obrigatórios
+    em `TCEnderExt`) seguido de xLgr/nro/xCpl?/xBairro, mesmo grupo compartilhado do endereço
+    nacional. Usado só pro tomador identificado por NIF (E0242) - este app não tem isso pro
+    prestador nem intermediário."""
+    end = _sub(pai, "end")
+    end_ext = _sub(end, "endExt")
+    _sub(end_ext, "cPais", endereco["pais"][:2].upper())
+    _sub(end_ext, "cEndPost", endereco["codigo_postal"][:11])
+    _sub(end_ext, "xCidade", endereco["cidade"][:60])
+    _sub(end_ext, "xEstProvReg", endereco["estado_provincia"][:60])
+    _sub(end, "xLgr", endereco["logradouro"][:255])
+    _sub(end, "nro", (endereco.get("numero") or "S/N")[:10])
+    if endereco.get("complemento"):
+        _sub(end, "xCpl", endereco["complemento"][:60])
+    _sub(end, "xBairro", (endereco.get("bairro") or "Centro")[:60])
+
+
 def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str = TP_AMB_HOMOLOGACAO,
                 dh_emi: dt.datetime | None = None, versao_app: str = "") -> str:
     """Serializa `campos` (de `montar_campos`) no XML da DPS, sem assinatura. `numero`/`serie`
@@ -253,14 +281,6 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     _sub(inf, "nDPS", str(numero))
     _sub(inf, "dCompet", campos["data_emissao"])
     _sub(inf, "tpEmit", "1")  # só prestador emitindo, único fluxo suportado
-    if campos.get("ibscbs"):
-        # `finNFSe` (indicador de finalidade, só "0"=regular existe hoje) só é um campo de
-        # `infDPS` de verdade no XSD de produção RESTRITA/homologação (onde o grupo IBSCBS
-        # também mora) — no XSD de produção vigente ele não existe nesta posição (só aparece,
-        # por engano de quem escreveu o XSD, como primeiro campo de dentro do próprio `IBSCBS`,
-        # que lá é um grupo "esqueleto" sem uso real). Por isso só emitimos aqui quando a nota
-        # tem IBS/CBS — do contrário quebraríamos a validação do XSD de produção vigente.
-        _sub(inf, "finNFSe", "0")
     _sub(inf, "cLocEmi", cod_mun)
 
     subst = campos.get("substituicao")
@@ -271,6 +291,12 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
         if subst.get("motivo_texto"):
             _sub(el_subst, "xMotivo", subst["motivo_texto"][:255])
 
+    # Rejeição real em produção (E0121/E0128, teste da Aparecida em 24/11): quando o emitente da
+    # DPS é o próprio prestador (tpEmit=1, único fluxo suportado por este programa), o nome/razão
+    # social e o endereço do prestador NÃO PODEM entrar no XML (regra de negócio oficial - o
+    # cadastro nacional do CNPJ já tem esses dados, enviar de novo é redundância que a Sefin
+    # recusa). Telefone e e-mail NÃO entram nessa proibição (só xNome/E0121 e end/E0128) -
+    # confirmado comparando com uma nota real emitida manualmente pelo Abner, que traz os dois.
     el_prest = _sub(inf, "prest")
     if len(doc_prest) == 11:
         _sub(el_prest, "CPF", doc_prest)
@@ -278,11 +304,6 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
         _sub(el_prest, "CNPJ", doc_prest)
     if prest.get("inscricao_municipal"):
         _sub(el_prest, "IM", prest["inscricao_municipal"])
-    if prest.get("nome"):
-        _sub(el_prest, "xNome", prest["nome"][:150])
-    end_prest = prest.get("endereco") or {}
-    if end_prest.get("logradouro"):
-        _end_nacional(el_prest, end_prest, cod_mun)
     fone_prest = _so_digitos(prest.get("telefone", ""))
     if len(fone_prest) >= 6:
         _sub(el_prest, "fone", fone_prest[:20])
@@ -294,12 +315,14 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
 
     toma = campos["tomador"]
     el_toma = _sub(inf, "toma")
+    toma_e_nif = False
     if toma["tipo_documento"] == "cpf":
         _sub(el_toma, "CPF", toma["documento"])
     elif toma["tipo_documento"] == "cnpj":
         _sub(el_toma, "CNPJ", toma["documento"])
     elif toma.get("nif"):
         _sub(el_toma, "NIF", toma["nif"][:40])
+        toma_e_nif = True
     elif toma.get("motivo_sem_nif"):
         _sub(el_toma, "cNaoNIF", str(toma["motivo_sem_nif"]))
     else:
@@ -307,8 +330,37 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     _sub(el_toma, "xNome", (toma["nome"] or "")[:150])
     end_toma = toma.get("endereco") or {}
     cod_mun_toma = _so_digitos(end_toma.get("codigo_municipio_ibge", ""))
-    if end_toma.get("logradouro") and cod_mun_toma:
-        _end_nacional(el_toma, end_toma, cod_mun_toma)
+    tem_end_nacional_toma = bool(end_toma.get("logradouro") and cod_mun_toma)
+    tem_end_exterior_toma = bool(end_toma.get("logradouro") and end_toma.get("pais")
+                                  and end_toma.get("codigo_postal") and end_toma.get("cidade")
+                                  and end_toma.get("estado_provincia"))
+    if toma_e_nif:
+        # E0242: com o prestador identificado por CNPJ (sempre o caso aqui) e o tomador por NIF,
+        # `toma/end/endExt` é obrigatório - sem exceção, porque este app não emite pelo tomador/
+        # intermediário (tpEmit sempre 1).
+        if not tem_end_exterior_toma:
+            raise ErroAdge(
+                "Tomador identificado por NIF precisa do endereço no exterior completo na DPS "
+                "(país, código postal, cidade, estado/província, logradouro e número) - "
+                "complete o cadastro do tomador (E0242).")
+        _end_exterior(el_toma, end_toma)
+    else:
+        if not tem_end_nacional_toma:
+            # Endereço do tomador é opcional no leiaute em geral, mas duas regras de negócio
+            # oficiais (confirmadas na auditoria de 24/11) o tornam OBRIGATÓRIO: E0235 (tomador
+            # identificado por CNPJ, com tpEmit=1) e E0237 (ISSQN retido pelo tomador,
+            # tpRetISSQN=2 - exceto quando o próprio tomador é o emitente, o que não acontece
+            # neste app). Bloquear com erro claro em vez de mandar uma DPS incompleta.
+            if toma["tipo_documento"] == "cnpj":
+                raise ErroAdge(
+                    "Tomador com CNPJ precisa de endereço nacional completo na DPS (E0235) — "
+                    "complete o cadastro do tomador.")
+            if campos["servico"]["issqn"].get("tp_ret_issqn") == 2:
+                raise ErroAdge(
+                    "ISSQN retido pelo tomador exige o endereço nacional completo do tomador na "
+                    "DPS (E0237) — complete o cadastro do tomador.")
+        if tem_end_nacional_toma:
+            _end_nacional(el_toma, end_toma, cod_mun_toma)
     fone_toma = _so_digitos(toma.get("telefone", ""))
     if len(fone_toma) >= 6:
         _sub(el_toma, "fone", fone_toma[:20])
@@ -333,14 +385,12 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
     _sub(loc_prest, "cLocPrestacao", cod_mun_toma or cod_mun)
     c_serv = _sub(serv, "cServ")
     _sub(c_serv, "cTribNac", campos["servico"]["ctn"].zfill(6))
-    # Ordem de `cNBS` dentro de `cServ` mudou entre o XSD de produção vigente (cTribNac, xDescServ,
-    # cNBS) e o de produção RESTRITA/homologação, onde mora o IBSCBS (cTribNac, cNBS, xDescServ) —
-    # só reordena quando a nota tem IBS/CBS, pra não quebrar a validação contra o XSD vigente.
-    tem_ibscbs = bool(campos.get("ibscbs"))
-    if tem_ibscbs and campos["servico"]["nbs"]:
-        _sub(c_serv, "cNBS", campos["servico"]["nbs"].zfill(9))
     _sub(c_serv, "xDescServ", (campos["descricao"] or "")[:2000] or "Serviço prestado")
-    if not tem_ibscbs and campos["servico"]["nbs"]:
+    # `cNBS` vem DEPOIS de `xDescServ` (ordem confirmada contra o XSD de produção vigente,
+    # `TCServ`) - a análise anterior achava que essa ordem só valia pra homologação e que
+    # produção queria `cNBS` antes; estava errada (rodei o XML real contra os dois XSDs em 24/11
+    # e só esta ordem valida nos dois).
+    if campos["servico"]["nbs"]:
         _sub(c_serv, "cNBS", campos["servico"]["nbs"].zfill(9))
     moeda = campos["servico"].get("exportacao_moeda")
     if moeda:
@@ -427,12 +477,31 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
             _sub(trib_fed, "vRetIRRF", _dec(ret_irrf))
         if ret_csll_outros:
             _sub(trib_fed, "vRetCSLL", _dec(ret_csll_outros))
+    # `trib/totTrib` é um choice e a opção certa depende da situação da empresa perante o Simples
+    # Nacional (confirmado contra as regras de negócio oficiais E0710/E0712/E0713 - rejeição real em
+    # produção, teste da Aparecida em 24/11): MEI usa só indTotTrib (fixo em "0"); ME/EPP optante usa
+    # só pTotTribSN (percentual da alíquota efetiva do Simples do mês, já cadastrado em
+    # `cfg["simples"]["aliquota_mes"]` pro PGDAS-D - reaproveitado aqui, nunca 0% porque seria uma
+    # alíquota falsa); quem não é optante (presumido/real) não pode usar NENHUM dos dois - só
+    # vTotTrib ou pTotTrib (valores aproximados da Lei 12.741/2012, aceitando 0% quando não há
+    # estimativa melhor no cadastro - essa parte, sim, o Decreto 8.264/2014 permite).
     tot_trib = _sub(trib, "totTrib")
     if prest["regime"] == "simples":
-        raise ErroAdge(
-            "totTrib para Simples Nacional (ME/EPP) ainda não implementado: precisa do percentual "
-            "aproximado dos tributos (pTotTribSN), que não está no cadastro hoje.")
-    _sub(tot_trib, "indTotTrib", "0")
+        aliquota_simples = prest.get("aliquota_simples_mes") or 0.0
+        if not aliquota_simples:
+            raise ErroAdge(
+                "Falta a alíquota do Simples Nacional do mês (Configurar emissão → Empresa) - "
+                "obrigatória para quem é optante do Simples (ME/EPP), pTotTribSN não pode ir vazio "
+                "nem com 0% (seria uma alíquota falsa, diferente da aliquota_mes já usada no "
+                "PGDAS-D) - preencha antes de emitir.")
+        _sub(tot_trib, "pTotTribSN", _dec(aliquota_simples * 100))
+    elif prest["regime"] == "mei":
+        _sub(tot_trib, "indTotTrib", "0")
+    else:
+        p_tot_trib = _sub(tot_trib, "pTotTrib")
+        _sub(p_tot_trib, "pTotTribFed", _dec(prest.get("percentual_tributos_federais") or 0.0))
+        _sub(p_tot_trib, "pTotTribEst", _dec(prest.get("percentual_tributos_estaduais") or 0.0))
+        _sub(p_tot_trib, "pTotTribMun", _dec(prest.get("percentual_tributos_municipais") or 0.0))
 
     ibscbs = campos.get("ibscbs")
     if ibscbs:
@@ -447,10 +516,15 @@ def montar_xml(campos: dict, *, serie: str = "1", numero: int = 1, ambiente: str
 
 def _montar_ibscbs(inf, ibscbs: dict) -> None:
     """`IBSCBS` (sibling de `valores`, último filho de `infDPS`) — ordem e grupos batidos com o
-    XSD oficial de produção restrita/homologação (`tests/fixtures/xsd_ibscbs/`, ver README ali;
-    esse grupo não existe no XSD de produção vigente). `CST`/`cClassTrib` são obrigatórios
-    (`Lancamento.validar` já bloqueia nota sem eles); o resto é omitido quando incompleto."""
+    XSD oficial de PRODUÇÃO vigente (`tests/fixtures/xsd/tiposComplexos_v1.01.xsd`, `TCRTCInfoIBSCBS`
+    dentro de `TCInfDPS`): o grupo IBSCBS JÁ EXISTE lá (confirmado rodando o XML real da Ferreira
+    Maria contra esse XSD em 24/11 - análise anterior, que achava que não existia e validava só
+    contra homologação/`tests/fixtures/xsd_ibscbs/`, estava errada). `finNFSe` é o PRIMEIRO campo
+    de dentro do próprio `IBSCBS` (não um campo de `infDPS`, como a análise anterior também errou) -
+    por isso entra aqui, e não lá em cima junto de `tpEmit`/`cLocEmi`. `CST`/`cClassTrib` são
+    obrigatórios (`Lancamento.validar` já bloqueia nota sem eles); o resto é omitido quando incompleto."""
     el = _sub(inf, "IBSCBS")
+    _sub(el, "finNFSe", "0")  # indicador de finalidade - só "0" (regular) existe hoje
     if ibscbs.get("ind_final"):
         _sub(el, "indFinal", ibscbs["ind_final"])
     if ibscbs.get("c_ind_op"):
@@ -544,22 +618,24 @@ def _montar_ibscbs(inf, ibscbs: dict) -> None:
 
     if not ibscbs.get("cst") or not ibscbs.get("cclasstrib"):
         raise ErroAdge("IBS/CBS: falta o CST ou o cClassTrib (Lancamento.validar deveria ter bloqueado antes).")
+    # `IBSCBS/valores/trib/gIBSCBS` é obrigatório e é onde CST/cClassTrib realmente moram (achado na
+    # auditoria de 24/11, rodando o XML real contra o XSD de produção vigente: a versão anterior
+    # deste código colocava CST/cClassTrib direto em `trib`, fora de `gIBSCBS`, e só criava
+    # `gIBSCBS` quando havia crédito presumido/tributação regular/diferimento - por isso validava
+    # contra o XSD de homologação, que tolerava isso, mas não contra o de produção).
     el_valores = _sub(el, "valores")
     el_trib = _sub(el_valores, "trib")
-    _sub(el_trib, "CST", ibscbs["cst"].zfill(3)[:3])
-    _sub(el_trib, "cClassTrib", ibscbs["cclasstrib"].zfill(6)[:6])
-    tem_dif = bool(ibscbs.get("p_dif_uf") or ibscbs.get("p_dif_mun") or ibscbs.get("p_dif_cbs"))
-    tem_reg = bool(ibscbs.get("cst_reg") and ibscbs.get("cclasstrib_reg"))
-    if ibscbs.get("c_cred_pres") or tem_reg or tem_dif:
-        el_g = _sub(el_trib, "gIBSCBS")
-        if ibscbs.get("c_cred_pres"):
-            _sub(el_g, "cCredPres", ibscbs["c_cred_pres"].zfill(2)[:2])
-        if tem_reg:
-            el_reg = _sub(el_g, "gTribRegular")
-            _sub(el_reg, "CSTReg", ibscbs["cst_reg"].zfill(3)[:3])
-            _sub(el_reg, "cClassTribReg", ibscbs["cclasstrib_reg"].zfill(6)[:6])
-        if tem_dif:
-            el_dif = _sub(el_g, "gDif")
-            _sub(el_dif, "pDifUF", _dec(ibscbs.get("p_dif_uf")))
-            _sub(el_dif, "pDifMun", _dec(ibscbs.get("p_dif_mun")))
-            _sub(el_dif, "pDifCBS", _dec(ibscbs.get("p_dif_cbs")))
+    el_g = _sub(el_trib, "gIBSCBS")
+    _sub(el_g, "CST", ibscbs["cst"].zfill(3)[:3])
+    _sub(el_g, "cClassTrib", ibscbs["cclasstrib"].zfill(6)[:6])
+    if ibscbs.get("c_cred_pres"):
+        _sub(el_g, "cCredPres", ibscbs["c_cred_pres"].zfill(2)[:2])
+    if ibscbs.get("cst_reg") and ibscbs.get("cclasstrib_reg"):
+        el_reg = _sub(el_g, "gTribRegular")
+        _sub(el_reg, "CSTReg", ibscbs["cst_reg"].zfill(3)[:3])
+        _sub(el_reg, "cClassTribReg", ibscbs["cclasstrib_reg"].zfill(6)[:6])
+    if ibscbs.get("p_dif_uf") or ibscbs.get("p_dif_mun") or ibscbs.get("p_dif_cbs"):
+        el_dif = _sub(el_g, "gDif")
+        _sub(el_dif, "pDifUF", _dec(ibscbs.get("p_dif_uf")))
+        _sub(el_dif, "pDifMun", _dec(ibscbs.get("p_dif_mun")))
+        _sub(el_dif, "pDifCBS", _dec(ibscbs.get("p_dif_cbs")))

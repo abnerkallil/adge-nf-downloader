@@ -58,13 +58,37 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
 
     def test_mei_sem_pis_cofins(self):
         empresa_emissao_mei = empresa_emissao(regime="mei")
-        lanc = Lancamento(tomador_nome="Cliente MEI", tomador_documento="12345678000195",
+        lanc = Lancamento(tomador_nome="Cliente MEI", tomador_documento="12345678901",
                            valor=500.0, competencia="2026-11", data_prestacao="2026-11-10")
         campos = dps.montar_campos(EMPRESA, empresa_emissao_mei, perfil_locacao(), None, lanc)
         self.assertIsNone(campos["valores"]["pis_cofins"])
         xml = dps.montar_xml(campos, serie="1", numero=2)
         valido, erros = validar(xml)
         self.assertTrue(valido, msg=str(erros))
+
+    def test_totTrib_escolhe_a_opcao_certa_pelo_regime(self):
+        """Rejeição real em produção (E0713, teste da Aparecida em 24/11): `trib/totTrib` é um
+        choice, e quem NÃO é optante do Simples nem MEI (presumido/real) não pode usar `indTotTrib`
+        nem `pTotTribSN` - só `pTotTrib`/`vTotTrib` (E0710/E0712/E0713). MEI continua em
+        `indTotTrib` (permitido só pra ele)."""
+        lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
+                           valor=1250.0, competencia="2026-11", data_prestacao="2026-11-05")
+        xml_presumido = dps.montar_xml(
+            dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao(), None, lanc), serie="1", numero=28)
+        valido, erros = validar(xml_presumido)
+        self.assertTrue(valido, msg=str(erros))
+        self.assertNotIn("<indTotTrib>", xml_presumido)
+        self.assertIn("<pTotTrib><pTotTribFed>11.33</pTotTribFed>"
+                       "<pTotTribEst>0.00</pTotTribEst><pTotTribMun>0.00</pTotTribMun></pTotTrib>",
+                       xml_presumido)
+
+        xml_mei = dps.montar_xml(
+            dps.montar_campos(EMPRESA, empresa_emissao(regime="mei"), perfil_locacao(), None, lanc),
+            serie="1", numero=29)
+        valido, erros = validar(xml_mei)
+        self.assertTrue(valido, msg=str(erros))
+        self.assertIn("<indTotTrib>0</indTotTrib>", xml_mei)
+        self.assertNotIn("pTotTrib", xml_mei)
 
     def test_sem_inscricao_municipal_omite_a_tag_im(self):
         """IM é opcional (`prest/IM`, minOccurs="0", RN 201) — sem ela, a tag some do XML
@@ -79,6 +103,9 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         self.assertNotIn("<IM>", xml)
 
     def test_telefone_e_email_do_prestador(self):
+        """E0121/E0128 proíbem só `xNome` e `end` do prestador quando ele é o emitente - telefone
+        e e-mail continuam permitidos (confirmado comparando com uma nota real emitida manualmente
+        pelo Abner no portal, que traz os dois)."""
         empresa_emissao_com_contato = empresa_emissao(telefone="(43) 99999-9999", email="contato@ferreiramaria.com.br")
         lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
                            valor=1250.0, competencia="2026-11", data_prestacao="2026-11-05")
@@ -88,6 +115,7 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         self.assertTrue(valido, msg=str(erros))
         self.assertIn("<fone>43999999999</fone>", xml)
         self.assertIn("<email>contato@ferreiramaria.com.br</email>", xml)
+        self.assertNotIn("FERREIRA MARIA", xml)
 
     def test_sem_telefone_nem_email_omite_as_tags_do_prestador(self):
         lanc = Lancamento(tomador_nome="Fulano de Tal", tomador_documento="12345678901",
@@ -209,8 +237,13 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         self.assertTrue(valido, msg=str(erros))
         self.assertIn("<vDR>100.00</vDR>", xml)
 
-    def test_tomador_estrangeiro_com_nif(self):
-        tomador = {"nif": "FR123456789"}
+    def test_tomador_estrangeiro_com_nif_e_endereco_exterior_completo(self):
+        """E0242: tomador por NIF exige `toma/end/endExt` (país, código postal, cidade,
+        estado/província) quando o prestador é CNPJ (sempre aqui)."""
+        tomador = {"nif": "FR123456789", "endereco": {
+            "pais": "FR", "codigo_postal": "75001", "cidade": "Paris", "estado_provincia": "Île-de-France",
+            "logradouro": "Rue de Rivoli", "numero": "1",
+        }}
         lanc = Lancamento(tomador_nome="Client Étranger", tomador_documento="", valor=1250.0,
                            competencia="2026-11", data_prestacao="2026-11-05")
         campos = dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao(), tomador, lanc)
@@ -218,6 +251,19 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         valido, erros = validar(xml)
         self.assertTrue(valido, msg=str(erros))
         self.assertIn("<NIF>FR123456789</NIF>", xml)
+        self.assertIn("<endExt><cPais>FR</cPais><cEndPost>75001</cEndPost><xCidade>Paris</xCidade>"
+                      "<xEstProvReg>Île-de-France</xEstProvReg></endExt>", xml)
+        self.assertIn("<xLgr>Rue de Rivoli</xLgr>", xml)
+
+    def test_tomador_estrangeiro_com_nif_sem_endereco_exterior_bloqueia(self):
+        """Sem o endereço no exterior completo, bloqueia em vez de mandar uma DPS que a Sefin
+        recusa (E0242, achado na auditoria de 24/11)."""
+        tomador = {"nif": "FR123456789"}
+        lanc = Lancamento(tomador_nome="Client Étranger", tomador_documento="", valor=1250.0,
+                           competencia="2026-11", data_prestacao="2026-11-05")
+        campos = dps.montar_campos(EMPRESA, empresa_emissao(), perfil_locacao(), tomador, lanc)
+        with self.assertRaises(ErroAdge):
+            dps.montar_xml(campos, serie="1", numero=12)
 
     def test_tomador_estrangeiro_sem_nif_com_motivo(self):
         tomador = {"motivo_sem_nif": "1"}
@@ -269,7 +315,7 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
     def test_mei_nao_leva_retencao_de_cp_mesmo_se_informada(self):
         """tribFed inteiro é proibido pro MEI (RN 518) — a retenção de CP/IRRF/CSLL não pode
         montar esse grupo, mesmo que o lançamento (por engano) traga um valor."""
-        lanc = Lancamento(tomador_nome="Cliente MEI", tomador_documento="12345678000195", valor=500.0,
+        lanc = Lancamento(tomador_nome="Cliente MEI", tomador_documento="12345678901", valor=500.0,
                            competencia="2026-11", data_prestacao="2026-11-10", retencao_cp=50.0)
         campos = dps.montar_campos(EMPRESA, empresa_emissao(regime="mei"), perfil_locacao(), None, lanc)
         xml = dps.montar_xml(campos, serie="1", numero=11)
@@ -312,9 +358,11 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         self.assertNotIn("<fone>", xml)
         self.assertNotIn("<email>", xml)
 
-    def test_endereco_do_prestador_e_do_tomador_quando_preenchidos(self):
-        """`prest/end`/`toma/end` (ambos opcionais no XSD) entram quando os dados existem — gap
-        fechado pelo Dev A em v2/config-emissao (commit 36caf9b)."""
+    def test_endereco_do_tomador_entra_mas_o_do_prestador_nao(self):
+        """`toma/end` (opcional no XSD) entra quando os dados existem — gap fechado pelo Dev A em
+        v2/config-emissao (commit 36caf9b). `prest/end` NUNCA entra (rejeição real em produção,
+        E0128, teste da Aparecida em 24/11): quando o emitente é o próprio prestador, o endereço
+        dele não pode ir na DPS — só o do tomador, que o cadastro nacional não tem."""
         empresa_emissao_fm = empresa_emissao(
             endereco={"cep": "86050000", "logradouro": "Av. Higienópolis", "numero": "100",
                        "complemento": "Sala 2", "bairro": "Centro"})
@@ -326,7 +374,7 @@ class ValidacaoContraOXsdOficial(unittest.TestCase):
         xml = dps.montar_xml(campos, serie="1", numero=4)
         valido, erros = validar(xml)
         self.assertTrue(valido, msg=str(erros))
-        self.assertIn("<xLgr>Av. Higienópolis</xLgr>", xml)
+        self.assertNotIn("Av. Higienópolis", xml)
         self.assertIn("<xLgr>Rua das Flores</xLgr>", xml)
         self.assertIn("<cLocPrestacao>4113700</cLocPrestacao>", xml)
 

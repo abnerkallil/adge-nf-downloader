@@ -99,6 +99,31 @@ class PisCofins(unittest.TestCase):
                          PERFIL_RESIDENCIAL["pis_cofins"]["tp_ret_pis_cofins"])
 
 
+class DataEmissaoSemDataDePrestacao(unittest.TestCase):
+    """Rejeição real em produção (E0015, 24/11): sem data de prestação, o padrão era o último dia
+    da competência, mas isso cai depois de hoje (dhEmi) sempre que a competência é o mês corrente
+    e ele ainda não terminou. `montar_campos` agora limita isso a hoje."""
+
+    def test_competencia_do_mes_corrente_usa_hoje_nao_o_fim_do_mes(self):
+        import datetime as dt
+
+        hoje = dt.date.today()
+        lanc = Lancamento(tomador_nome="Fulano", tomador_documento="12345678901", valor=1000.0,
+                           competencia=hoje.strftime("%Y-%m"))
+        campos = dps.montar_campos(EMPRESA, EMPRESA_EMISSAO_PRESUMIDO, PERFIL_RESIDENCIAL, None, lanc)
+        self.assertEqual(campos["data_emissao"], hoje.isoformat())
+
+    def test_competencia_de_mes_encerrado_continua_usando_o_fim_do_mes(self):
+        lanc = Lancamento(tomador_nome="Fulano", tomador_documento="12345678901", valor=1000.0,
+                           competencia="2020-01")
+        campos = dps.montar_campos(EMPRESA, EMPRESA_EMISSAO_PRESUMIDO, PERFIL_RESIDENCIAL, None, lanc)
+        self.assertEqual(campos["data_emissao"], "2020-01-31")
+
+    def test_data_de_prestacao_informada_continua_tendo_prioridade(self):
+        campos = dps.montar_campos(EMPRESA, EMPRESA_EMISSAO_PRESUMIDO, PERFIL_RESIDENCIAL, None, LANC)
+        self.assertEqual(campos["data_emissao"], "2026-11-05")
+
+
 class Descricao(unittest.TestCase):
     def test_usa_a_descricao_fixa_do_perfil_sem_tomador(self):
         campos = dps.montar_campos(EMPRESA, EMPRESA_EMISSAO_PRESUMIDO, PERFIL_RESIDENCIAL, None, LANC)

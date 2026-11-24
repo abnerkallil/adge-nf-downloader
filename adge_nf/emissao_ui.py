@@ -313,8 +313,8 @@ class DialogoEmissao(Modal):
         f = Cartao(pai)
         c = f.corpo
         rotulo(c, "IBS/CBS (reforma tributária)", 12, "bold", "verde_escuro").pack(anchor="w")
-        rotulo(c, "Grupo opcional da DPS, validado contra o leiaute de produção restrita/homologação "
-                  "(ainda não é o de produção vigente). Deixe em \"Não\" enquanto isso não entrar em produção.",
+        rotulo(c, "Grupo opcional da DPS para a reforma tributária (IBS/CBS). Marque \"Sim\" só "
+                  "quando a operação tiver mesmo esses tributos a declarar.",
               10, cor="suave", largura=px(620)).pack(anchor="w", pady=(4, 10))
         ttk.Combobox(c, textvariable=self.v_ibscbs, values=["Não", "Sim"], state="readonly", width=12, font=F(10)).pack(anchor="w")
         self.f_ibscbs_corpo = tk.Frame(c, bg=P.superficie)
@@ -458,6 +458,13 @@ class DialogoEmissao(Modal):
             campos["ibscbs_dest_nome"] = self.v_ibscbs_dest_nome.get().strip()
             campos["ibscbs_dest_documento"] = self.v_ibscbs_dest_doc.get().strip()
         if self.v_ibscbs_imovel.get():
+            # `cIndOp` é obrigatório no XSD de produção (achado na auditoria de 24/11) e esta tela
+            # não tem campo pra ele ainda — "020101" (ANEXO_C-INDOP: "Execução de operações com bem
+            # imóvel... relacionado a bem imóvel", local de fornecimento = localidade do imóvel) é o
+            # código que bate com esta mesma operação de locação; conferir com o Abner/contador antes
+            # de confiar nisso pra outro tipo de operação sobre imóvel (serviço sobre o imóvel ou
+            # administração/intermediação são códigos diferentes, 020201/020301).
+            campos["ibscbs_c_ind_op"] = "020101"
             municipio = do.municipio_por_texto_formatado(self.v_ibscbs_imovel_mun.get())
             campos["ibscbs_imovel_cmun"] = (municipio or {}).get("codigo_ibge", "")
             campos["ibscbs_imovel_vtotoper"] = pe.valor_numerico(self.v_ibscbs_imovel_valor.get())
@@ -1051,8 +1058,16 @@ class DialogoConferenciaNota(Modal):
         self.texto.insert("end", f"{campos.get('informacoes_complementares') or '(nenhuma)'}\n", "normal")
 
         self._secao("TRIBUTOS APROXIMADOS (LEI 12.741/2012)")
-        self._aviso("Não informado nesta nota (indTotTrib = 0) — o app não tem o percentual aproximado "
-                    "de tributos cadastrado para calcular este valor.")
+        regime = p.get("regime")
+        if regime == "mei":
+            self._aviso("Não informado nesta nota (indTotTrib = 0) — padrão pro MEI, não precisa de percentual.")
+        elif regime == "simples":
+            self._linha("Alíquota do Simples do mês (pTotTribSN)",
+                        f"{p.get('aliquota_simples_mes', 0.0) * 100:.2f}%".replace(".", ","), destacar=True)
+        else:
+            self._linha("Federal", f"{p.get('percentual_tributos_federais', 0.0):.2f}%".replace(".", ","), destacar=True)
+            self._linha("Estadual", f"{p.get('percentual_tributos_estaduais', 0.0):.2f}%".replace(".", ","))
+            self._linha("Municipal", f"{p.get('percentual_tributos_municipais', 0.0):.2f}%".replace(".", ","))
 
     def _confirmar(self):
         self.resposta = True

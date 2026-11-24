@@ -130,6 +130,22 @@ class Lancamento:
                 erros.append("IBS/CBS: falta o CST")
             if not self.ibscbs_cclasstrib:
                 erros.append("IBS/CBS: falta o cClassTrib")
+            if not self.ibscbs_c_ind_op:
+                # Obrigatório no XSD de produção (`IBSCBS/cIndOp` sem minOccurs="0") - sem ele a
+                # nota sai com os campos seguintes (indDest etc.) fora de ordem e é rejeitada
+                # (achado na auditoria de 24/11, rodando o XML real contra o XSD oficial).
+                erros.append("IBS/CBS: falta o código indicador da operação (cIndOp)")
+            if self.ibscbs_imovel_cmun or self.ibscbs_unidades_imobiliarias or self.ibscbs_bens_moveis:
+                # O grupo `IBSCBS/imovel` de produção (`TCRTCInfoImovel`) só tem `inscImobFisc`
+                # (opcional) e um choice `cCIB` OU `end` - nada de `cMun`, `gLocacao`
+                # (copropriedade/valor total/ajustes de base) nem `bensMoveis` (achado na auditoria
+                # de 24/11, rodando o XML real contra o XSD de produção vigente; essa parte mais
+                # rica do leiaute só existe em homologação). Bloqueado até o XSD de produção
+                # alcançar essa parte do leiaute, pra não mandar uma DPS que a Sefin recusa.
+                erros.append(
+                    "IBS/CBS: o redutor social por unidade imobiliária/bens móveis ainda não é "
+                    "aceito em produção (o leiaute lá só tem CIB ou endereço do imóvel, sem o "
+                    "resto) - desligue \"Operação com bem imóvel\" ou fale com o Abner antes.")
             if self.ibscbs_ind_dest == "1" and not self.ibscbs_dest_nome.strip():
                 erros.append("IBS/CBS: destinatário diferente do tomador precisa de nome")
         return erros

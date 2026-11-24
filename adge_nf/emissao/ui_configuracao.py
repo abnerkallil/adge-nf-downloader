@@ -632,6 +632,7 @@ class DialogoConfiguracaoEmissao(Modal):
         self.v_end_complemento = tk.StringVar(value=end["complemento"])
         self.v_end_bairro = tk.StringVar(value=end["bairro"])
         self.v_aliq_simples = tk.StringVar(value=f"{cfg['simples']['aliquota_mes']:.4f}".replace(".", ",") if cfg["simples"]["aliquota_mes"] else "")
+        self.v_pct_trib_federal = tk.StringVar(value=f"{cfg.get('percentual_tributos_federais', 11.33):.2f}".replace(".", ","))
         self.v_identificacao_padrao = tk.StringVar(
             value=es.MODOS_IDENTIFICACAO.get(cfg.get("identificacao_tomador_padrao", "documento"), es.MODOS_IDENTIFICACAO["documento"]))
 
@@ -656,6 +657,16 @@ class DialogoConfiguracaoEmissao(Modal):
         Campo(self.f_simples, self.v_aliq_simples, largura=10).pack(anchor="w", pady=(3, 0))
         rotulo(self.f_simples, "Tirada do PGDAS-D do mês da competência: muda a cada emissão de guia.", 9, cor="suave",
               largura=px(600)).pack(anchor="w", pady=(2, 0))
+        self.f_federal_aproximado = tk.Frame(g, bg=P.superficie)
+        self.f_federal_aproximado.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        rotulo(self.f_federal_aproximado, "Percentual aproximado dos tributos federais - Lei 12.741/2012 (%)",
+               9, "bold", "suave").pack(anchor="w")
+        Campo(self.f_federal_aproximado, self.v_pct_trib_federal, largura=10).pack(anchor="w", pady=(3, 0))
+        rotulo(self.f_federal_aproximado,
+               "Mostrado na nota como \"valor aproximado dos tributos\" (quem não é optante do Simples nem MEI "
+               "é obrigado a informar). Padrão 11,33% = PIS 0,65% + COFINS 3% + IRPJ 4,80% + CSLL 2,88% "
+               "(presunção padrão de serviços no Lucro Presumido) - ajuste se a composição real for outra.",
+               9, cor="suave", largura=px(600)).pack(anchor="w", pady=(2, 0))
         rotulo(g, "Como identificar o tomador por padrão", 9, "bold", "suave").grid(row=7, column=0, columnspan=2, sticky="w", pady=(16, 3))
         ttk.Combobox(g, textvariable=self.v_identificacao_padrao, values=list(es.MODOS_IDENTIFICACAO.values()),
                     state="readonly", width=56, font=F(10)).grid(row=8, column=0, columnspan=2, sticky="w")
@@ -698,8 +709,13 @@ class DialogoConfiguracaoEmissao(Modal):
         chave = {v: k for k, v in es.REGIMES.items()}.get(self.v_regime.get(), "simples")
         if chave == "simples":
             self.f_simples.grid()
-        else:
+            self.f_federal_aproximado.grid_remove()
+        elif chave == "mei":
             self.f_simples.grid_remove()
+            self.f_federal_aproximado.grid_remove()
+        else:  # presumido/real - não optante do Simples: totTrib exige o percentual aproximado
+            self.f_simples.grid_remove()
+            self.f_federal_aproximado.grid()
 
     def _regime_chave(self) -> str:
         return {v: k for k, v in es.REGIMES.items()}.get(self.v_regime.get(), "simples")
@@ -919,6 +935,13 @@ class DialogoConfiguracaoEmissao(Modal):
             self.v_aba.set("empresa")
             self._trocar_aba()
             return
+        try:
+            pct_trib_federal = grafico.parse_brl(self.v_pct_trib_federal.get()) if self.v_pct_trib_federal.get().strip() else 0.0
+        except ValueError as e:
+            self.l_erro.config(text=str(e))
+            self.v_aba.set("empresa")
+            self._trocar_aba()
+            return
         nome_para_identificacao = {v: k for k, v in es.MODOS_IDENTIFICACAO.items()}
         nome_para_reg_esp = {v: k for k, v in es.REGIME_ESPECIAL_TRIBUTACAO.items()}
         self.cfg.update({
@@ -930,6 +953,7 @@ class DialogoConfiguracaoEmissao(Modal):
                         "numero": self.v_end_numero.get().strip(), "complemento": self.v_end_complemento.get().strip(),
                         "bairro": self.v_end_bairro.get().strip()},
             "simples": {"aliquota_mes": aliq_simples},
+            "percentual_tributos_federais": pct_trib_federal,
             "identificacao_tomador_padrao": nome_para_identificacao.get(self.v_identificacao_padrao.get(), "documento"),
         })
         self.cfg = es.migrar(self.cfg)

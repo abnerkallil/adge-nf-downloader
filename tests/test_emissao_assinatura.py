@@ -94,6 +94,28 @@ class AssinaturaDps(unittest.TestCase):
         filhos = [etree.QName(el).localname for el in doc]
         self.assertEqual(filhos, ["infDPS", "Signature"])
 
+    def test_assinatura_sem_prefixo_de_namespace(self):
+        """Rejeição real em produção (E1228, 24/11): a Sefin Nacional recusa QUALQUER prefixo de
+        namespace no XML descompactado, mesmo o `ds:` que o signxml usa por padrão no bloco da
+        assinatura. O XSD valida os dois jeitos (prefixo não importa pra ele), então só este teste
+        de string pega a regressão."""
+        import re
+
+        assinado = assinatura.assinar_dps(xml_dps_de_teste(), self.pfx_path, SENHA)
+        self.assertEqual(re.findall(r"<[A-Za-z0-9_]+:", assinado), [])
+
+    def test_canonicalizacao_e_c14n_1_0_nao_1_1(self):
+        """Rejeição real em produção (E0715 "Certificado Digital da assinatura inválido", 24/11):
+        o signxml canoniza em C14N 1.1 por padrão, mas o padrão oficial de NFS-e (confirmado contra
+        vários manuais e contra a implementação de referência `nfse-nacional`, que atende essa mesma
+        API) é C14N 1.0 - com 1.1 a Sefin recalcula um digest diferente do que assinamos e não bate."""
+        import re
+
+        assinado = assinatura.assinar_dps(xml_dps_de_teste(), self.pfx_path, SENHA)
+        self.assertIn('CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"',
+                       assinado)
+        self.assertNotIn("c14n11", assinado)
+
     def test_senha_errada_levanta_erro_claro(self):
         with self.assertRaises(ErroAdge):
             assinatura.assinar_dps(xml_dps_de_teste(), self.pfx_path, "senha-errada")

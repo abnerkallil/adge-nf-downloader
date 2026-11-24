@@ -57,11 +57,25 @@ def _assinar(xml: str, pfx: str, senha: str, elemento_a_referenciar: str) -> str
     if not id_inf:
         raise ErroAdge(f"{elemento_a_referenciar} sem atributo Id - não há referência para a assinatura.")
 
-    # Sem placeholder: sem um <Signature> já no documento, o signxml anexa o `<ds:Signature>`
+    # Sem placeholder: sem um <Signature> já no documento, o signxml anexa o `<Signature>`
     # gerado como último filho da raiz — exatamente onde o XSD espera (irmão do elemento referenciado).
+    # Canonicalização C14N 1.0 (não a 1.1, que é o padrão do signxml): confirmado contra múltiplos
+    # manuais oficiais de NFS-e (gov.br, prefeituras) e contra uma implementação de referência ativa
+    # da própria API SEFIN Nacional (nfse-nacional, github.com/andrejfg/gerador-nfse-nacional-bun) -
+    # a rejeição real em produção (E0715 "Certificado Digital da assinatura inválido", teste da
+    # Aparecida em 24/11) bate com esse descasamento: o C14N 1.1 muda a canonicalização do bloco
+    # assinado, então a Sefin recalcula um digest/assinatura diferente do que recebeu e não consegue
+    # validar - o erro sai como "certificado inválido" em vez de um erro de assinatura mais específico.
     signer = signxml.XMLSigner(method=signxml.methods.enveloped,
                                 signature_algorithm=signxml.SignatureMethod.RSA_SHA256,
-                                digest_algorithm=signxml.DigestAlgorithm.SHA256)
+                                digest_algorithm=signxml.DigestAlgorithm.SHA256,
+                                c14n_algorithm=signxml.CanonicalizationMethod.CANONICAL_XML_1_0)
+    # Por padrão o signxml prefixa o bloco da assinatura com "ds:" (`<ds:Signature>`) - válido em
+    # XML, mas a Sefin Nacional rejeita QUALQUER prefixo de namespace no XML descompactado (E1228,
+    # confirmado no teste real de produção da nota da Aparecida em 24/11). `{None: namespaces.ds}`
+    # faz o signxml gerar o bloco com `xmlns="..."` sem prefixo (namespace padrão redeclarado só
+    # dentro do próprio <Signature>) - mesmo conteúdo, mesma assinatura, sem nenhum "ds:".
+    signer.namespaces = {None: signxml.namespaces.ds}
     try:
         assinado = signer.sign(root, key=chave, cert=[cert], reference_uri=f"#{id_inf}")
     except Exception as e:

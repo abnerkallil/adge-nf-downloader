@@ -8,9 +8,12 @@ from . import config_schema as es
 
 
 def casar_tomador(lancamento, empresa_emissao: dict) -> dict | None:
-    """Devolve o tomador cadastrado que casa com o lançamento, ou None."""
+    """Devolve o tomador cadastrado que casa com o lançamento, ou None (inclusive quando o
+    documento bate com mais de um tomador ativo e não dá pra desempatar com certeza — ver
+    `config_schema._desempatar_tomadores`)."""
     return es.encontrar_tomador(empresa_emissao or {}, documento=lancamento.tomador_documento,
-                                 nome=lancamento.tomador_nome, endereco=lancamento.endereco)
+                                 nome=lancamento.tomador_nome, endereco=lancamento.endereco,
+                                 perfil_nome=lancamento.perfil_nome)
 
 
 def tomador_de_lancamento(lancamento, perfil_id: str) -> dict:

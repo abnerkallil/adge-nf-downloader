@@ -64,24 +64,28 @@ class SessaoQueLevantaExcecao:
 
 class ConstantesConfirmadasPelaPesquisa(unittest.TestCase):
     def test_hosts_producao_e_homologacao(self):
-        self.assertEqual(transmissao.HOST_SEFIN_PRODUCAO, "https://sefin.nfse.gov.br/API/SefinNacional")
+        self.assertEqual(transmissao.HOST_SEFIN_PRODUCAO, "https://sefin.nfse.gov.br/SefinNacional")
         self.assertEqual(transmissao.HOST_SEFIN_HOMOLOGACAO, "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional")
 
 
 class TravaDeProducao(unittest.TestCase):
-    def test_desligada_por_padrao(self):
-        self.assertFalse(transmissao.PRODUCAO_REAL_LIBERADA)
+    """Liberada em 24/11/2026: o Abner testou manualmente (navegador, certificado da Ferreira
+    Maria) que a produção de verdade aceita o certificado — só a produção RESTRITA segue recusando
+    por um motivo do lado do governo, ainda sem explicação (chamado aberto). Decisão dele: "o
+    importante é funcionar", com cancelamento disponível se alguma nota sair errada."""
 
-    def test_ambiente_ativo_e_homologacao_enquanto_travado(self):
-        self.assertEqual(transmissao.ambiente_ativo(), transmissao.TP_AMB_HOMOLOGACAO)
+    def test_ligada(self):
+        self.assertTrue(transmissao.PRODUCAO_REAL_LIBERADA)
 
-    def test_enviar_em_producao_recusa_quando_travado(self):
+    def test_ambiente_ativo_e_producao(self):
+        self.assertEqual(transmissao.ambiente_ativo(), transmissao.TP_AMB_PRODUCAO)
+
+    def test_enviar_em_producao_funciona_liberado(self):
         sessao = SessaoFalsa(Resposta(200, _corpo_sucesso()))
-        with self.assertRaises(ErroAdge):
-            transmissao.enviar("<DPS/>", sessao, tp_amb=transmissao.TP_AMB_PRODUCAO)
-        self.assertEqual(sessao.chamadas, [])  # nem chega a tentar mandar
+        resultado = transmissao.enviar("<DPS/>", sessao, tp_amb=transmissao.TP_AMB_PRODUCAO)
+        self.assertTrue(resultado.sucesso)
 
-    def test_enviar_em_homologacao_nao_e_afetado_pela_trava(self):
+    def test_enviar_em_homologacao_continua_funcionando(self):
         sessao = SessaoFalsa(Resposta(200, _corpo_sucesso()))
         resultado = transmissao.enviar("<DPS/>", sessao, tp_amb=transmissao.TP_AMB_HOMOLOGACAO)
         self.assertTrue(resultado.sucesso)

@@ -34,12 +34,20 @@ from dataclasses import dataclass
 
 from ..core import ErroAdge
 
-HOST_SEFIN_PRODUCAO = "https://sefin.nfse.gov.br/API/SefinNacional"
+HOST_SEFIN_PRODUCAO = "https://sefin.nfse.gov.br/SefinNacional"
 HOST_SEFIN_HOMOLOGACAO = "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional"
+"""Confirmado em 23/11/2026 contra a página oficial "APIs - Prod. Restrita e Produção"
+(gov.br/nfse/.../apis-prod-restrita-e-producao, atualizada 20/08/2026): a produção RESTRITA leva
+`/API/` no caminho, a produção de verdade NÃO leva — é assimétrico mesmo, não erro de digitação."""
 
 TP_AMB_PRODUCAO, TP_AMB_HOMOLOGACAO = "1", "2"
 
-PRODUCAO_REAL_LIBERADA = False  # trava de segurança: só o Abner muda isto, e só depois de testar em homologação
+PRODUCAO_REAL_LIBERADA = True
+"""Trava de segurança: só o Abner muda isto, e só depois de testar em homologação. Liberada em
+24/11/2026, depois do teste manual dele confirmar que o certificado da Ferreira Maria é aceito em
+produção de verdade (a própria produção restrita segue bloqueando esse certificado por algo do
+lado do governo, ainda sem explicação) — decisão explícita dele: "o importante é funcionar", com
+cancelamento disponível se alguma nota sair errada."""
 
 USER_AGENT = "AdgeNFDownloader/2.0.5"
 """`requests` manda "python-requests/x.y" por padrão — um relato de outro desenvolvedor (mesmo

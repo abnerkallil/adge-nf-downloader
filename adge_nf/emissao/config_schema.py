@@ -388,17 +388,46 @@ def _normalizar_documento(doc: str) -> str:
     return "".join(c for c in (doc or "") if c.isdigit())
 
 
-def encontrar_tomador(cfg: dict, documento: str = "", nome: str = "", endereco: str = "") -> dict | None:
+def _desempatar_tomadores(candidatos: list, nome: str, perfil_nome: str, cfg: dict) -> dict | None:
+    """Mais de um tomador ativo com o mesmo documento (ex.: duas casas da mesma pessoa, cada uma
+    com seu perfil — ver o caso da Joise): tenta desempatar primeiro pelo nome exato do lançamento
+    (cada cadastro normalmente tem um nome diferente, tipo "Joise - Casa" vs "Joise - Salão"),
+    depois pelo nome do perfil (quando o lançamento já veio com um perfil explícito, ex.: coluna da
+    planilha). Sem conseguir desempatar com certeza, devolve None — fica ambíguo de propósito, pra
+    não arriscar aplicar o perfil errado; o usuário escolhe na tela (fica como "Precisa de perfil")."""
+    nome_n = _normalizar(nome)
+    if nome_n:
+        por_nome = [t for t in candidatos if _normalizar(t.get("nome")) == nome_n]
+        if len(por_nome) == 1:
+            return por_nome[0]
+        if por_nome:
+            candidatos = por_nome
+    if perfil_nome:
+        perfil_n = _normalizar(perfil_nome)
+        id_por_nome_perfil = {_normalizar(p.get("nome", "")): p["id"] for p in cfg.get("perfis", [])}
+        perfil_id = id_por_nome_perfil.get(perfil_n)
+        if perfil_id:
+            por_perfil = [t for t in candidatos if t.get("perfil_id") == perfil_id]
+            if len(por_perfil) == 1:
+                return por_perfil[0]
+    return None
+
+
+def encontrar_tomador(cfg: dict, documento: str = "", nome: str = "", endereco: str = "", perfil_nome: str = "") -> dict | None:
     """Casa um lançamento com um tomador recorrente já cadastrado. Prioridade: documento exato,
     depois nome normalizado, depois endereço normalizado (campo estruturado ou texto livre, o que
     o tomador tiver preenchido). Campo em branco no cadastro não entra no casamento por esse critério.
-    Só considera tomadores ativos."""
+    Só considera tomadores ativos. Dois (ou mais) tomadores ativos com o mesmo documento: tenta
+    desempatar por nome/perfil (`_desempatar_tomadores`); não conseguindo, devolve None em vez de
+    escolher um dos dois arbitrariamente."""
     ativos = [t for t in cfg.get("tomadores", []) if t.get("ativo", True)]
     doc = _normalizar_documento(documento)
     if doc:
-        for t in ativos:
-            if _normalizar_documento(t.get("documento")) == doc:
-                return t
+        candidatos = [t for t in ativos if _normalizar_documento(t.get("documento")) == doc]
+        if len(candidatos) == 1:
+            return candidatos[0]
+        if len(candidatos) > 1:
+            return _desempatar_tomadores(candidatos, nome, perfil_nome, cfg)
     nome_n = _normalizar(nome)
     if nome_n:
         for t in ativos:

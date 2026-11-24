@@ -207,6 +207,41 @@ class EncontrarTomador(unittest.TestCase):
         self.assertIsNone(es.encontrar_tomador(self.cfg, documento="91804248991"))
 
 
+class EncontrarTomadorDocumentoDuplicado(unittest.TestCase):
+    """Caso da Joise: duas casas (perfis) diferentes pra mesma pessoa, mesmo CPF."""
+
+    def setUp(self):
+        self.cfg = es.configuracao_padrao()
+        self.perfil_casa = es.perfil_padrao("Locação residencial")
+        self.perfil_salao = es.perfil_padrao("Locação não residencial")
+        self.cfg["perfis"] = [self.perfil_casa, self.perfil_salao]
+        t_casa = es.tomador_padrao("Joise - Casa")
+        t_casa.update({"documento": "02676579274", "perfil_id": self.perfil_casa["id"]})
+        t_salao = es.tomador_padrao("Joise - Salão")
+        t_salao.update({"documento": "02676579274", "perfil_id": self.perfil_salao["id"]})
+        self.cfg["tomadores"] = [t_casa, t_salao]
+
+    def test_documento_igual_sozinho_e_ambiguo_devolve_none(self):
+        self.assertIsNone(es.encontrar_tomador(self.cfg, documento="02676579274"))
+
+    def test_desempata_pelo_nome_exato_do_lancamento(self):
+        achado = es.encontrar_tomador(self.cfg, documento="02676579274", nome="Joise - Salão")
+        self.assertEqual(achado["nome"], "Joise - Salão")
+
+    def test_desempata_pelo_perfil_quando_o_lancamento_tem_override(self):
+        achado = es.encontrar_tomador(self.cfg, documento="02676579274", perfil_nome="Locação residencial")
+        self.assertEqual(achado["nome"], "Joise - Casa")
+
+    def test_nome_que_nao_bate_com_nenhum_cai_pro_perfil(self):
+        achado = es.encontrar_tomador(self.cfg, documento="02676579274", nome="Joise",
+                                       perfil_nome="Locação não residencial")
+        self.assertEqual(achado["nome"], "Joise - Salão")
+
+    def test_sem_como_desempatar_continua_none(self):
+        achado = es.encontrar_tomador(self.cfg, documento="02676579274", nome="Joise")
+        self.assertIsNone(achado)
+
+
 class IdentificacaoTomador(unittest.TestCase):
     def test_herda_o_padrao_da_empresa_por_padrao(self):
         cfg = es.configuracao_padrao()
